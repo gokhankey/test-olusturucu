@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Key Test Hazırlayıcı</title>
+    <meta name="theme-color" content="#0f2f57" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Key Test" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <link rel="stylesheet" href="./styles.css?v=key-test-split-fix-v1" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-icon"><i data-lucide="file-text"></i></span>
+          <div>
+            <strong>Key Test Hazırlayıcı</strong>
+            <span>PDF ve fotoğraftan sınav oluşturma aracı</span>
+          </div>
+        </div>
+
+        <nav class="main-nav" aria-label="Ana menü">
+          <button class="nav-item" type="button" data-nav="crop">
+            <i data-lucide="scissors"></i>
+            <span>Kırpma Aracı</span>
+            <b id="cropBadge" class="nav-badge hidden">0</b>
+          </button>
+          <button class="nav-item" type="button" data-nav="editor">
+            <i data-lucide="pencil"></i>
+            <span>Soru Editörü</span>
+          </button>
+        </nav>
+
+        <div class="account">
+          <span class="account-pill"><i data-lucide="shield-check"></i> Yerel çalışma alanı</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="left-panel" aria-label="Test ayarları">
+          <div class="panel-heading">
+            <span>Sınav ayarları</span>
+            <small>Kağıdı ve soru yerleşimini buradan yönet</small>
+          </div>
+          <div class="mode-tabs">
+            <button class="mode-tab active" type="button" data-exam-kind="written">Yazılı Kağıdı</button>
+            <button class="mode-tab" type="button" data-exam-kind="sheet">Yaprak Test</button>
+            <button class="mode-tab" type="button" data-exam-kind="trial">Deneme Sınavı</button>
+            <button id="advancedToggleBtn" class="mini-icon" type="button" title="Gelişmiş Ayarlar">
+              <i data-lucide="settings"></i>
+            </button>
+            <button id="quickSaveBtn" class="mini-icon" type="button" title="Kaydet">
+              <i data-lucide="save"></i>
+            </button>
+          </div>
+
+          <section id="basicPanel" class="settings-panel">
+            <input id="testTitle" type="text" placeholder="Test Adı" />
+            <input id="schoolName" type="text" placeholder="Okul Adı" />
+            <select id="writtenType">
+              <option>1. Dönem 1. Çoktan Seçmeli Test Sınavı</option>
+              <option>1. Dönem 2. Çoktan Seçmeli Test Sınavı</option>
+              <option>2. Dönem 1. Çoktan Seçmeli Test Sınavı</option>
+              <option>2. Dönem 2. Çoktan Seçmeli Test Sınavı</option>
+            </select>
+            <input id="descriptionField" class="hidden" type="text" placeholder="Test ile ilgili açıklama" />
+            <div class="split-row">
+              <input id="className" type="text" placeholder="Sınıf/Şube" />
+              <select id="groupName">
+                <option>Grup Yok</option>
+                <option>A Grubu</option>
+                <option>B Grubu</option>
+              </select>
+            </div>
+            <label class="check-row">
+              <input id="questionGapToggle" type="checkbox" />
+              <span>Sorular arasına boşluk bırak</span>
+            </label>
+            <label id="teacherOption" class="check-row">
+              <input id="includeTeacher" type="checkbox" />
+              <span>Kağıda öğretmen ismini de ekle</span>
+            </label>
+            <label id="answerKeyOption" class="check-row hidden">
+              <input id="includeAnswerKey" type="checkbox" />
+              <span>Kağıda cevap anahtarını da ekle</span>
+            </label>
+            <label class="check-row">
+              <input id="includeOptic" type="checkbox" />
+              <span>Optik form ekle</span>
+            </label>
+            <button id="preparePaperBtn" class="primary-action" type="button">Kağıdı Hazırla</button>
+          </section>
+
+          <section id="advancedPanel" class="settings-panel advanced-panel hidden">
+            <h2>Gelişmiş Ayarlar</h2>
+            <label class="check-row">
+              <input id="smartLayout" type="checkbox" />
+              <span>Akıllı soru yerleşimi uygula</span>
+            </label>
+            <label class="check-row">
+              <input id="watermarkToggle" type="checkbox" />
+              <span>Filigran ekle</span>
+            </label>
+
+            <div class="setting-block">
+              <p>Sayfa tasarım rengi belirle:</p>
+              <div class="swatch-row" id="colorSwatches">
+                <span>Renk:</span>
+                <button type="button" class="swatch active" data-color="#0f2f57" style="--swatch:#0f2f57"></button>
+                <button type="button" class="swatch" data-color="#174a7c" style="--swatch:#174a7c"></button>
+                <button type="button" class="swatch" data-color="#2563eb" style="--swatch:#2563eb"></button>
+                <button type="button" class="swatch" data-color="#0f766e" style="--swatch:#0f766e"></button>
+                <button type="button" class="swatch" data-color="#475569" style="--swatch:#475569"></button>
+                <button type="button" class="swatch" data-color="#64748b" style="--swatch:#64748b"></button>
+                <button type="button" class="swatch" data-color="#0369a1" style="--swatch:#0369a1"></button>
+                <button type="button" class="swatch" data-color="#7c2d12" style="--swatch:#7c2d12"></button>
+                <button type="button" class="swatch" data-color="#111827" style="--swatch:#111827"></button>
+                <button id="customColorBtn" type="button" class="swatch add-swatch">+</button>
+                <input id="paperColor" class="hidden" type="color" value="#0f2f57" />
+              </div>
+            </div>
+
+            <label class="select-line">
+              <span>Kağıt boyutu:</span>
+              <select id="paperSize">
+                <option value="a4" selected>A4 (210 x 297 mm)</option>
+                <option value="a5">A5 (148 x 210 mm)</option>
+              </select>
+            </label>
+            <label class="select-line">
+              <span>Yönlendirme:</span>
+              <select id="orientation">
+                <option value="portrait" selected>Dikey</option>
+                <option value="landscape">Yatay</option>
+              </select>
+            </label>
+            <label class="select-line">
+              <span>Sütun sayısı:</span>
+              <select id="columnCount">
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="3">3</option>
+              </select>
+            </label>
+
+            <div class="margin-block">
+              <p>Kenar boşluklarını ayarla:</p>
+              <div class="margin-grid">
+                <div class="margin-diagram"></div>
+                <div>Üst:<b id="marginTopLabel">1,5 cm</b></div>
+                <div>Alt:<b id="marginBottomLabel">1,5 cm</b></div>
+                <div>Sol:<b id="marginLeftLabel">1,5 cm</b></div>
+                <div>Sağ:<b id="marginRightLabel">1,5 cm</b></div>
+              </div>
+              <div class="margin-actions">
+                <select id="marginPreset">
+                  <option>Normal</option>
+                  <option>Dar</option>
+                  <option>Geniş</option>
+                </select>
+                <button id="customMarginsBtn" class="link-button" type="button">Özel kenar boşlukları</button>
+              </div>
+            </div>
+
+            <button id="otherSettingsBtn" class="soft-action hidden" type="button">
+              <i data-lucide="arrow-right"></i>
+              <span>Diğer ayarları göster</span>
+            </button>
+            <button id="advancedDoneBtn" class="primary-action small" type="button">Tamam</button>
+          </section>
+        </aside>
+
+        <section class="work-area" aria-label="Soru çalışma alanı">
+          <div id="questionGrid" class="question-grid"></div>
+          <div id="emptyState" class="drop-state">
+            <i data-lucide="download"></i>
+            <p><strong>Soru seçin</strong> veya bu alana sürükleyin</p>
+            <div class="drop-actions">
+              <label id="chooseDeviceBtn" class="drop-action-file" title="PDF veya fotoğraf yükle">
+                <i data-lucide="upload"></i>
+                <span>Cihazdan Seçin</span>
+                <input id="mediaInput" type="file" accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg,.webp" multiple />
+              </label>
+              <button id="openCropBtn" type="button"><i data-lucide="scissors"></i>Kırpma Aracı</button>
+              <button id="openEditorBtn" type="button"><i data-lucide="pencil"></i>Soru Editörü</button>
+              <button id="restoreDraftBtn" type="button" title="Kaydedilen soru paketini aç"><i data-lucide="rotate-ccw"></i>Taslağı Geri Yükle</button>
+            </div>
+          </div>
+
+          <div id="floatingDock" class="floating-dock hidden">
+            <span id="loadedCountText">0 öğe yüklendi</span>
+            <button id="dockAddBtn" type="button" title="Soru Ekle"><i data-lucide="plus"></i></button>
+            <button id="dockClearBtn" type="button" title="Tüm Soruları Kaldır"><i data-lucide="circle-x"></i></button>
+            <button id="dockSaveBtn" type="button" title="Soruları Kaydet"><i data-lucide="save"></i></button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <input id="pdfInput" class="file-input-stealth" type="file" accept="application/pdf" multiple />
+    <input id="packageInput" class="file-input-stealth" type="file" accept="application/json,.json" />
+    <input id="imageInput" class="file-input-stealth" type="file" accept="image/*" capture="environment" multiple />
+
+    <div id="cropStartModal" class="overlay hidden" aria-hidden="true">
+      <div class="crop-start-card">
+        <label id="cropStartDrop" class="crop-start-zone" title="Kırpılacak dosyayı seç">
+          <i class="crop-start-icon" data-lucide="download"></i>
+          <p><strong>Kırpılacak dosyayı seçin</strong> veya bu alana sürükleyin</p>
+          <span>Soru kesimi için desteklenen dosya türleri:</span>
+          <div class="crop-file-types">
+            <em><i data-lucide="file-text"></i>PDF</em>
+            <em><i data-lucide="image"></i>Görsel Dosyalar</em>
+          </div>
+          <input id="cropStartInput" type="file" accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg,.webp" multiple />
+        </label>
+      </div>
+    </div>
+
+    <div id="pdfModal" class="overlay hidden" aria-hidden="true">
+      <div class="pdf-modal">
+        <header class="pdf-topbar">
+          <button id="pdfSettingsBtn" class="round-tool" type="button" title="PDF yakınlığını değiştir"><i data-lucide="settings"></i></button>
+          <select id="pdfSelect"></select>
+          <label class="pdf-add" title="PDF ekle">
+            <i data-lucide="file-plus"></i>
+            <input id="pdfModalInput" type="file" accept="application/pdf" multiple />
+          </label>
+          <button id="closePdfBtn" class="close-button" type="button" title="Kapat"><i data-lucide="x"></i></button>
+        </header>
+        <div id="pdfViewer" class="pdf-viewer">
+          <div id="pdfCanvasWrap" class="pdf-canvas-wrap">
+            <canvas id="pdfCanvas"></canvas>
+            <div id="pdfOverlayLayer" class="pdf-overlay-layer"></div>
+            <div id="selectionBox" class="selection-box hidden"></div>
+            <div id="selectionConfirm" class="selection-confirm hidden">
+              <div class="answer-picks">
+                <button type="button" data-answer="A">A</button>
+                <button type="button" data-answer="B">B</button>
+                <button type="button" data-answer="C">C</button>
+                <button type="button" data-answer="D">D</button>
+                <button type="button" data-answer="E">E</button>
+              </div>
+              <button id="confirmCropBtn" type="button">Tamam</button>
+            </div>
+          </div>
+        </div>
+        <footer class="pdf-footer">
+          <button id="prevPdfPageBtn" type="button">Önce</button>
+          <button id="nextPdfPageBtn" type="button">Sonra</button>
+          <label>Sayfa:<select id="pdfPageSelect"></select></label>
+          <span id="pdfQuestionTotal">Toplam Soru: 0</span>
+          <button id="uploadPdfQuestionsBtn" class="upload-button" type="button">
+            <i data-lucide="cloud-upload"></i>
+            Yükle
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="gapModal" class="overlay hidden" aria-hidden="true">
+      <div class="dialog gap-dialog">
+        <header>BOŞLUK MİKTARINI AYARLAYIN</header>
+        <div class="gap-illustration">
+          <div class="fake-question"><b id="gapFirstNo">1.</b><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="gap-ruler"><em id="gapValueLabel">35 mm</em></div>
+          <div class="fake-question small"><b id="gapSecondNo">2.</b><span></span><span></span><span></span></div>
+        </div>
+        <select id="gapSelect">
+          <option value="15">15 milimetre</option>
+          <option value="20">20 milimetre</option>
+          <option value="25">25 milimetre</option>
+          <option value="30">30 milimetre</option>
+          <option value="35" selected>35 milimetre</option>
+          <option value="40">40 milimetre</option>
+          <option value="45">45 milimetre</option>
+          <option value="50">50 milimetre</option>
+          <option value="55">55 milimetre</option>
+          <option value="custom">Başka Değer Belirle</option>
+        </select>
+        <label id="gapCustomWrap" class="custom-gap-field hidden">
+          Özel değer
+          <span>
+            <input id="gapCustomValue" type="number" min="0" max="120" step="1" value="35" />
+            mm
+          </span>
+        </label>
+        <div class="dialog-actions">
+          <button id="gapOkBtn" class="primary-action small" type="button">TAMAM</button>
+          <button id="gapCancelBtn" class="soft-action small" type="button">İPTAL</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="splitModal" class="overlay hidden" aria-hidden="true">
+      <div class="dialog split-dialog">
+        <header>TESTİ AYIR</header>
+        <div class="dialog-body split-body">
+          <input id="splitBeforeName" type="text" placeholder="Bölüm Adı" />
+          <p><b>Soru Aralığı:</b> <span id="splitBeforeRange">1 - 1</span></p>
+          <hr />
+          <input id="splitAfterName" type="text" placeholder="Bölüm Adı" />
+          <p><b>Soru Aralığı:</b> <span id="splitAfterRange">2 - 4</span></p>
+          <label><input id="splitResetNumber" type="checkbox" />Soru numarasını 1'den başlat</label>
+          <label><input id="splitNewPage" type="checkbox" />Bölümü yeni bir sayfada başlat</label>
+        </div>
+        <div class="dialog-actions">
+          <button id="splitOkBtn" class="primary-action small" type="button">TAMAM</button>
+          <button id="splitCancelBtn" class="soft-action small" type="button">İPTAL</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="otherSettingsModal" class="overlay hidden" aria-hidden="true">
+      <div class="dialog">
+        <header>DİĞER AYARLAR</header>
+        <div class="dialog-body checks">
+          <label><input type="checkbox" />Çizgi üzerine yazı ekle</label>
+          <label><input type="checkbox" />Açıklama boşluğunu kaldır</label>
+          <label><input type="checkbox" />Otomatik harf büyütmeyi iptal et</label>
+          <label><input type="checkbox" />Açıklama metnini ortala</label>
+          <label><input type="checkbox" />Filigran dönme açısını negatif yönlü ayarla</label>
+          <label><input type="checkbox" />Kitapçık türünü gizle</label>
+        </div>
+        <div class="dialog-actions">
+          <button data-close-modal class="primary-action small" type="button">TAMAM</button>
+          <button data-close-modal class="soft-action small" type="button">İPTAL</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="watermarkModal" class="overlay hidden" aria-hidden="true">
+      <div class="dialog watermark-dialog">
+        <header>FİLİGRAN EKLE</header>
+        <div class="dialog-body">
+          <label class="radio-line"><input type="radio" name="watermarkType" checked />Metin Filigranı</label>
+          <input id="watermarkText" type="text" placeholder="Basılı filigran için yazı belirleyin" />
+          <div class="slider-grid">
+            <label>Opaklık: <b id="wmOpacityLabel">%20</b><input id="wmOpacity" type="range" min="5" max="80" value="20" /></label>
+            <label>Büyüklük: <b id="wmSizeLabel">%90</b><input id="wmSize" type="range" min="30" max="160" value="90" /></label>
+            <label>Açı: <b id="wmAngleLabel">45°</b><input id="wmAngle" type="range" min="-90" max="90" value="45" /></label>
+            <label>Renk:<input id="wmColor" type="color" value="#000000" /></label>
+          </div>
+          <label class="radio-line muted"><input type="radio" name="watermarkType" disabled />Görsel Filigran</label>
+          <div class="slider-grid disabled">
+            <label>Opaklık: %15<input type="range" value="15" disabled /></label>
+            <label>Büyüklük: %50<input type="range" value="50" disabled /></label>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button id="watermarkOkBtn" class="primary-action small" type="button">TAMAM</button>
+          <button data-close-modal class="soft-action small" type="button">İPTAL</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="marginsModal" class="overlay hidden" aria-hidden="true">
+      <div class="dialog margins-dialog">
+        <header>ÖZEL KENAR BOŞLUKLARI</header>
+        <div class="margins-body">
+          <div class="margin-inputs">
+            <label>Üst:<input id="marginTop" type="number" min="0" step="0.1" value="1.5" /></label>
+            <label>Alt:<input id="marginBottom" type="number" min="0" step="0.1" value="1.5" /></label>
+            <label>Sol:<input id="marginLeft" type="number" min="0" step="0.1" value="1.5" /></label>
+            <label>Sağ:<input id="marginRight" type="number" min="0" step="0.1" value="1.5" /></label>
+          </div>
+          <div class="margin-preview">
+            <span>Önizleme</span>
+            <div id="marginPreviewPage"><b>210 x 297 mm</b></div>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button id="marginsOkBtn" class="primary-action small" type="button">TAMAM</button>
+          <button data-close-modal class="soft-action small" type="button">İPTAL</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="editorModal" class="overlay hidden" aria-hidden="true">
+      <div class="editor-modal">
+        <button id="closeEditorBtn" class="editor-close" type="button"><i data-lucide="x"></i></button>
+        <div class="editor-menu">
+          <div class="editor-title">Soru Editörü</div>
+          <div class="menu-wrap">
+            <button id="toolsMenuBtn" type="button">Araçlar</button>
+            <div id="toolsDropdown" class="tools-dropdown hidden">
+              <button id="insertEquationBtn" type="button"><i data-lucide="sigma"></i>Denklem ekle</button>
+              <button id="openDrawingBtn" type="button"><i data-lucide="drafting-compass"></i>Çizim...</button>
+              <button id="wordCountBtn" type="button"><i data-lucide="spell-check"></i>Kelime sayısı</button>
+            </div>
+          </div>
+        </div>
+        <div class="editor-toolbar">
+          <button type="button" data-command="undo"><i data-lucide="undo-2"></i></button>
+          <button type="button" data-command="redo"><i data-lucide="redo-2"></i></button>
+          <button type="button" data-command="bold"><b>B</b></button>
+          <button type="button" data-command="italic"><i>I</i></button>
+          <button type="button" data-command="underline"><u>U</u></button>
+          <button type="button" data-command="subscript">x<sub>2</sub></button>
+          <button type="button" data-command="superscript">x<sup>2</sup></button>
+          <select id="editorFont"><option>Arial</option><option>Times New Roman</option><option>Calibri</option></select>
+          <select id="editorSize"><option>10pt</option><option>12pt</option><option>14pt</option><option>18pt</option></select>
+          <button type="button" data-command="justifyLeft"><i data-lucide="align-left"></i></button>
+          <button type="button" data-command="justifyCenter"><i data-lucide="align-center"></i></button>
+          <button type="button" data-command="justifyRight"><i data-lucide="align-right"></i></button>
+          <button type="button" data-command="insertUnorderedList"><i data-lucide="list"></i></button>
+          <button type="button" id="insertImageBtn"><i data-lucide="image"></i></button>
+          <button id="insertTableBtn" type="button"><i data-lucide="table"></i></button>
+          <button id="insertSigmaBtn" type="button"><span>Σ</span></button>
+          <button id="insertOmegaBtn" type="button"><span>Ω</span></button>
+          <button id="insertSymbolBtn" type="button"><i data-lucide="smile"></i></button>
+        </div>
+        <div class="editor-page-wrap">
+          <article id="questionEditor" class="editor-page" contenteditable="true"></article>
+        </div>
+        <footer class="editor-footer">
+          <label>Soru Tipi:<select id="editorQuestionType"><option>Normal</option><option>Açıklama</option><option>Geniş</option></select></label>
+          <button id="uploadEditorQuestionBtn" class="upload-button" type="button">
+            <i data-lucide="cloud-upload"></i>
+            Yükle
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="drawingModal" class="overlay hidden" aria-hidden="true">
+      <div class="drawing-modal">
+        <header>ÇİZİM ARACI <span>BETA</span></header>
+        <div id="drawingHint" class="drawing-hint">Önce yazılacak metnin konumunu belirleyin.</div>
+        <aside class="drawing-tools">
+          <button data-tool="point" type="button" title="Nokta">A</button>
+          <button data-tool="segment" class="active" type="button" title="Doğru parçası"><i data-lucide="slash"></i></button>
+          <button data-tool="rect" type="button" title="Dörtgen"><i data-lucide="square"></i></button>
+          <button data-tool="triangle" type="button" title="Üçgen"><i data-lucide="triangle"></i></button>
+          <button data-tool="circle" type="button" title="Çember"><i data-lucide="circle"></i></button>
+          <button data-tool="free" type="button" title="Serbest çizgi"><i data-lucide="activity"></i></button>
+          <button data-tool="angle" type="button" title="Açı">∠</button>
+          <button data-tool="text" type="button" title="Metin">Aa</button>
+          <button id="moreDrawingBtn" type="button">Daha fazla</button>
+        </aside>
+        <canvas id="drawingCanvas" width="930" height="560"></canvas>
+        <button id="insertDrawingBtn" class="upload-button draw-add" type="button">EKLE</button>
+        <button id="closeDrawingBtn" class="soft-action draw-close" type="button">KAPAT</button>
+        <div id="moreDrawingModal" class="more-drawing hidden">
+          <header>DAHA FAZLA</header>
+          <div class="more-grid">
+            <button data-tool="ellipse" type="button"><i data-lucide="circle"></i><span>Elips</span></button>
+            <button data-tool="polygon" type="button"><i data-lucide="hexagon"></i><span>Düzgün Çokgen</span></button>
+            <button data-tool="sector" type="button"><i data-lucide="pie-chart"></i><span>Daire Dilimi</span></button>
+            <button data-tool="arc" type="button"><i data-lucide="rotate-cw"></i><span>Yay</span></button>
+            <button data-tool="math" type="button"><span>√x</span><span>Matematiksel İfade</span></button>
+          </div>
+          <button id="closeMoreDrawingBtn" class="soft-action small" type="button">KAPAT</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="documentModal" class="overlay hidden" aria-hidden="true">
+      <div class="document-modal">
+        <header>DOKÜMANLAR <button id="closeDocumentBtn" type="button"><i data-lucide="x"></i></button></header>
+        <div class="doc-body">
+          <section class="doc-preview">
+            <article id="finalPaper" class="final-paper"></article>
+            <div class="doc-controls">
+              <span id="docPageStatus">Sayfa: <b>1</b> / 1</span>
+              <button id="docZoomOutBtn" type="button" title="Uzaklaştır">−</button>
+              <button id="docZoomFitBtn" type="button" title="Sayfaya sığdır"><i data-lucide="search"></i></button>
+              <button id="docZoomInBtn" type="button" title="Yakınlaştır">+</button>
+              <button id="downloadDocBtn" type="button"><i data-lucide="cloud-download"></i></button>
+              <button type="button" onclick="window.print()"><i data-lucide="printer"></i></button>
+            </div>
+          </section>
+          <aside class="doc-side">
+            <div class="doc-title"><span>PDF</span><strong id="docName">MATEMATİK</strong></div>
+            <p id="docInfoLine">Sayfa: 1 <span>Boyut: 215 KB</span></p>
+            <button id="sideDownloadBtn" type="button"><i data-lucide="cloud-download"></i>Bilgisayarıma indir</button>
+            <button id="sideEmailBtn" type="button"><i data-lucide="mail"></i>E-Posta ile gönder</button>
+            <button id="sidePdfEmailBtn" type="button"><i data-lucide="send"></i>PDF olarak gönder</button>
+          </aside>
+        </div>
+      </div>
+    </div>
+
+    <div id="emailModal" class="overlay hidden" aria-hidden="true">
+      <div class="dialog email-dialog">
+        <header>E-POSTA İLE GÖNDER</header>
+        <div class="dialog-body email-body">
+          <label>
+            Alıcı e-posta
+            <input id="emailTo" type="email" placeholder="ornek@eposta.com" />
+          </label>
+          <label>
+            Konu
+            <input id="emailSubject" type="text" />
+          </label>
+          <label>
+            Mesaj
+            <textarea id="emailMessage" rows="5"></textarea>
+          </label>
+          <div class="email-file-note">
+            <i data-lucide="file-text"></i>
+            <span id="emailFileName">Hazırlanan sınav eklenecek</span>
+          </div>
+        </div>
+        <div class="dialog-actions">
+          <button id="emailShareBtn" class="primary-action small" type="button">E-PAYLAŞ</button>
+          <button id="emailAppBtn" class="soft-action small" type="button">E-POSTA AÇ</button>
+          <button data-close-modal class="soft-action small" type="button">İPTAL</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="imagePreviewModal" class="overlay hidden" aria-hidden="true">
+      <div class="image-preview-dialog">
+        <button data-close-modal class="close-button" type="button"><i data-lucide="x"></i></button>
+        <img id="previewImage" alt="Soru önizleme" />
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="./app.js?v=key-test-split-fix-v1"></script>
+    <script>
+      if ("serviceWorker" in navigator && window.isSecureContext) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js").catch(() => {});
+        });
+      }
+    </script>
+  </body>
+</html>

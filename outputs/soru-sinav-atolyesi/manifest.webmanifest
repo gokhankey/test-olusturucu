@@ -1,0 +1,20 @@
+{
+  "name": "Key Test Hazırlayıcı",
+  "short_name": "Key Test",
+  "description": "PDF ve fotoğraftan test, yaprak test ve deneme sınavı hazırlama aracı.",
+  "lang": "tr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f2f57",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
