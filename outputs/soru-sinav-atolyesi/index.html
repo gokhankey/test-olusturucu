@@ -10,7 +10,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=key-test-split-fix-v1" />
+    <link rel="stylesheet" href="./styles.css?v=20260914" />
   </head>
   <body>
     <div class="app-shell">
@@ -66,7 +66,9 @@
               <option>1. Dönem 2. Çoktan Seçmeli Test Sınavı</option>
               <option>2. Dönem 1. Çoktan Seçmeli Test Sınavı</option>
               <option>2. Dönem 2. Çoktan Seçmeli Test Sınavı</option>
+              <option value="custom">Başka bir sınav adı belirle</option>
             </select>
+            <input id="customExamTitle" class="hidden" type="text" placeholder="Sınav adı" aria-label="Özel sınav adı" />
             <input id="descriptionField" class="hidden" type="text" placeholder="Test ile ilgili açıklama" />
             <div class="split-row">
               <input id="className" type="text" placeholder="Sınıf/Şube" />
@@ -74,6 +76,8 @@
                 <option>Grup Yok</option>
                 <option>A Grubu</option>
                 <option>B Grubu</option>
+                <option value="2">2 Gruplu (A - B)</option>
+                <option value="4">4 Gruplu (A - B - C - D)</option>
               </select>
             </div>
             <label class="check-row">
@@ -84,6 +88,7 @@
               <input id="includeTeacher" type="checkbox" />
               <span>Kağıda öğretmen ismini de ekle</span>
             </label>
+            <input id="teacherName" class="hidden" type="text" placeholder="Öğretmen adı" aria-label="Öğretmen adı" />
             <label id="answerKeyOption" class="check-row hidden">
               <input id="includeAnswerKey" type="checkbox" />
               <span>Kağıda cevap anahtarını da ekle</span>
@@ -166,7 +171,7 @@
               </div>
             </div>
 
-            <button id="otherSettingsBtn" class="soft-action hidden" type="button">
+            <button id="otherSettingsBtn" class="soft-action" type="button">
               <i data-lucide="arrow-right"></i>
               <span>Diğer ayarları göster</span>
             </button>
@@ -223,11 +228,15 @@
     <div id="pdfModal" class="overlay hidden" aria-hidden="true">
       <div class="pdf-modal">
         <header class="pdf-topbar">
-          <button id="pdfSettingsBtn" class="round-tool" type="button" title="PDF yakınlığını değiştir"><i data-lucide="settings"></i></button>
+          <button id="pdfSettingsBtn" class="round-tool" type="button" title="Kırpma ayarları"><i data-lucide="settings"></i></button>
+          <div class="crop-modes" aria-label="Kırpma modu">
+            <button type="button" data-crop-mode="select" class="active" aria-pressed="true" title="Alan seç"><i data-lucide="scan"></i></button>
+            <button type="button" data-crop-mode="pan" aria-pressed="false" title="Belgeyi kaydır"><i data-lucide="hand"></i></button>
+          </div>
           <select id="pdfSelect"></select>
           <label class="pdf-add" title="PDF ekle">
             <i data-lucide="file-plus"></i>
-            <input id="pdfModalInput" type="file" accept="application/pdf" multiple />
+            <input id="pdfModalInput" type="file" accept="application/pdf,image/*" multiple />
           </label>
           <button id="closePdfBtn" class="close-button" type="button" title="Kapat"><i data-lucide="x"></i></button>
         </header>
@@ -235,7 +244,11 @@
           <div id="pdfCanvasWrap" class="pdf-canvas-wrap">
             <canvas id="pdfCanvas"></canvas>
             <div id="pdfOverlayLayer" class="pdf-overlay-layer"></div>
-            <div id="selectionBox" class="selection-box hidden"></div>
+            <div id="selectionBox" class="selection-box hidden">
+              <span data-resize="nw"></span><span data-resize="n"></span><span data-resize="ne"></span>
+              <span data-resize="e"></span><span data-resize="se"></span><span data-resize="s"></span>
+              <span data-resize="sw"></span><span data-resize="w"></span>
+            </div>
             <div id="selectionConfirm" class="selection-confirm hidden">
               <div class="answer-picks">
                 <button type="button" data-answer="A">A</button>
@@ -245,6 +258,7 @@
                 <button type="button" data-answer="E">E</button>
               </div>
               <button id="confirmCropBtn" type="button">Tamam</button>
+              <button id="cancelCropBtn" type="button" title="Seçimi iptal et" aria-label="Seçimi iptal et"><i data-lucide="x"></i></button>
             </div>
           </div>
         </div>
@@ -318,15 +332,16 @@
       <div class="dialog">
         <header>DİĞER AYARLAR</header>
         <div class="dialog-body checks">
-          <label><input type="checkbox" />Çizgi üzerine yazı ekle</label>
-          <label><input type="checkbox" />Açıklama boşluğunu kaldır</label>
-          <label><input type="checkbox" />Otomatik harf büyütmeyi iptal et</label>
-          <label><input type="checkbox" />Açıklama metnini ortala</label>
-          <label><input type="checkbox" />Filigran dönme açısını negatif yönlü ayarla</label>
-          <label><input type="checkbox" />Kitapçık türünü gizle</label>
+          <label><input id="lineTextToggle" type="checkbox" />Çizgi üzerine yazı ekle</label>
+          <input id="lineTextValue" type="text" placeholder="Çizgi üzerindeki yazı" aria-label="Çizgi üzerindeki yazı" />
+          <label><input id="compactMeta" type="checkbox" />Açıklama boşluğunu kaldır</label>
+          <label><input id="preserveTitleCase" type="checkbox" />Otomatik harf büyütmeyi iptal et</label>
+          <label><input id="centerMeta" type="checkbox" />Açıklama metnini ortala</label>
+          <label><input id="negativeWatermark" type="checkbox" />Filigran dönme açısını negatif yönlü ayarla</label>
+          <label><input id="hideBooklet" type="checkbox" />Kitapçık türünü gizle</label>
         </div>
         <div class="dialog-actions">
-          <button data-close-modal class="primary-action small" type="button">TAMAM</button>
+          <button id="otherSettingsOkBtn" class="primary-action small" type="button">TAMAM</button>
           <button data-close-modal class="soft-action small" type="button">İPTAL</button>
         </div>
       </div>
@@ -336,18 +351,20 @@
       <div class="dialog watermark-dialog">
         <header>FİLİGRAN EKLE</header>
         <div class="dialog-body">
-          <label class="radio-line"><input type="radio" name="watermarkType" checked />Metin Filigranı</label>
-          <input id="watermarkText" type="text" placeholder="Basılı filigran için yazı belirleyin" />
+          <div class="watermark-types">
+            <label class="radio-line"><input type="radio" name="watermarkType" value="text" checked />Metin Filigranı</label>
+            <label class="radio-line"><input type="radio" name="watermarkType" value="image" />Görsel Filigran</label>
+          </div>
+          <input id="watermarkText" type="text" placeholder="Basılı filigran için yazı belirleyin" aria-label="Filigran metni" />
+          <div id="watermarkImageWrap" class="hidden">
+            <input id="watermarkImageInput" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Filigran görseli" />
+            <img id="watermarkImagePreview" class="hidden" alt="Seçilen filigran" />
+          </div>
           <div class="slider-grid">
             <label>Opaklık: <b id="wmOpacityLabel">%20</b><input id="wmOpacity" type="range" min="5" max="80" value="20" /></label>
-            <label>Büyüklük: <b id="wmSizeLabel">%90</b><input id="wmSize" type="range" min="30" max="160" value="90" /></label>
+            <label>Büyüklük: <b id="wmSizeLabel">%90</b><input id="wmSize" type="range" min="10" max="100" value="90" /></label>
             <label>Açı: <b id="wmAngleLabel">45°</b><input id="wmAngle" type="range" min="-90" max="90" value="45" /></label>
             <label>Renk:<input id="wmColor" type="color" value="#000000" /></label>
-          </div>
-          <label class="radio-line muted"><input type="radio" name="watermarkType" disabled />Görsel Filigran</label>
-          <div class="slider-grid disabled">
-            <label>Opaklık: %15<input type="range" value="15" disabled /></label>
-            <label>Büyüklük: %50<input type="range" value="50" disabled /></label>
           </div>
         </div>
         <div class="dialog-actions">
@@ -475,6 +492,7 @@
           </section>
           <aside class="doc-side">
             <div class="doc-title"><span>PDF</span><strong id="docName">MATEMATİK</strong></div>
+            <label id="docGroupWrap" class="hidden">Kitapçık<select id="docGroupSelect" aria-label="Kitapçık"></select></label>
             <p id="docInfoLine">Sayfa: 1 <span>Boyut: 215 KB</span></p>
             <button id="sideDownloadBtn" type="button"><i data-lucide="cloud-download"></i>Bilgisayarıma indir</button>
             <button id="sideEmailBtn" type="button"><i data-lucide="mail"></i>E-Posta ile gönder</button>
@@ -522,9 +540,24 @@
 
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="./app.js?v=key-test-split-fix-v1"></script>
+    <div id="cropSettingsModal" class="overlay hidden" aria-hidden="true">
+      <div class="dialog">
+        <header>KIRPMA AYARLARI</header>
+        <div class="dialog-body crop-settings-body">
+          <label>Yakınlaştırma <select id="cropZoom" aria-label="Kırpma yakınlaştırması">
+            <option value="fit">Genişliğe sığdır</option><option value="1">%100</option>
+            <option value="1.35">%135</option><option value="1.75">%175</option><option value="2">%200</option>
+          </select></label>
+          <label class="check-row"><input id="cropTrim" type="checkbox" checked />Beyaz kenarları otomatik temizle</label>
+        </div>
+        <div class="dialog-actions"><button id="cropSettingsOkBtn" class="primary-action small" type="button">TAMAM</button><button data-close-modal class="soft-action small" type="button">İPTAL</button></div>
+      </div>
+    </div>
+    <script src="./vendor/pdf.min.js"></script>
+    <script src="./vendor/lucide.min.js"></script>
+    <script src="./vendor/html2canvas.min.js"></script>
+    <script src="./vendor/jspdf.umd.min.js"></script>
+    <script src="./app.js?v=20260914"></script>
     <script>
       if ("serviceWorker" in navigator && window.isSecureContext) {
         window.addEventListener("load", () => {

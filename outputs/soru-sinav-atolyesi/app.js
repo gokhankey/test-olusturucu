@@ -11,6 +11,14 @@ const state = {
   isSelecting: false,
   selection: null,
   selectedAnswer: "",
+  editingCropId: null,
+  cropZoom: "fit",
+  cropTrim: true,
+  cropMode: "select",
+  cropRenderVersion: 0,
+  cropRendering: false,
+  documentVariants: [],
+  documentGroup: "",
   gapTarget: "global",
   gapQuestionId: null,
   splitQuestionId: null,
@@ -24,7 +32,8 @@ const state = {
     accentColor: "#0f2f57",
     globalGap: 0,
     margins: { top: 1.5, bottom: 1.5, left: 1.5, right: 1.5 },
-    watermark: { enabled: false, text: "", opacity: 20, size: 90, angle: 45, color: "#000000" },
+    watermark: { enabled: false, type: "text", text: "", image: "", opacity: 20, size: 90, angle: 45, color: "#000000" },
+    printOptions: { lineTextToggle: false, lineTextValue: "", compactMeta: false, preserveTitleCase: false, centerMeta: false, negativeWatermark: false, hideBooklet: false },
   },
 };
 
@@ -43,6 +52,8 @@ const els = {
   testTitle: $("#testTitle"),
   schoolName: $("#schoolName"),
   writtenType: $("#writtenType"),
+  customExamTitle: $("#customExamTitle"),
+  teacherName: $("#teacherName"),
   descriptionField: $("#descriptionField"),
   className: $("#className"),
   groupName: $("#groupName"),
@@ -192,7 +203,7 @@ const drawCtx = els.drawingCanvas.getContext("2d");
 function init() {
   if (window.pdfjsLib) {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      "./vendor/pdf.worker.min.js";
   }
 
   bindEvents();
@@ -220,7 +231,7 @@ function bindEvents() {
 
   els.advancedToggleBtn.addEventListener("click", showAdvancedPanel);
   els.advancedDoneBtn.addEventListener("click", showBasicPanel);
-  els.quickSaveBtn.addEventListener("click", saveLocalDraft);
+  els.quickSaveBtn.addEventListener("click", exportQuestionPackage);
   els.restoreDraftBtn.addEventListener("click", () => openFilePicker(els.packageInput));
   els.openCropBtn.addEventListener("click", openCropTool);
   els.openEditorBtn.addEventListener("click", openEditor);
@@ -232,7 +243,7 @@ function bindEvents() {
   els.pdfInput.addEventListener("change", (event) => loadPdfFiles(event.target.files));
   els.mediaInput.addEventListener("change", handleMediaFiles);
   els.cropStartInput.addEventListener("change", handleCropStartFiles);
-  els.pdfModalInput.addEventListener("change", (event) => loadPdfFiles(event.target.files, true));
+  els.pdfModalInput.addEventListener("change", handleCropStartFiles);
   els.packageInput.addEventListener("change", importQuestionPackage);
   els.imageInput.addEventListener("change", importImagesAsQuestions);
 
@@ -249,10 +260,16 @@ function bindEvents() {
   });
 
   els.closePdfBtn.addEventListener("click", closePdfModal);
-  els.pdfSettingsBtn.addEventListener("click", async () => {
-    state.pdfScale = state.pdfScale >= 1.6 ? 1.15 : state.pdfScale + 0.25;
+  els.pdfSettingsBtn.addEventListener("click", () => {
+    $("#cropZoom").value = state.cropZoom;
+    $("#cropTrim").checked = state.cropTrim;
+    openModal($("#cropSettingsModal"));
+  });
+  $("#cropSettingsOkBtn").addEventListener("click", async () => {
+    state.cropZoom = $("#cropZoom").value;
+    state.cropTrim = $("#cropTrim").checked;
+    closeModal($("#cropSettingsModal"));
     await renderPdfPage();
-    showToast(`PDF yakınlığı %${Math.round(state.pdfScale * 100)}`);
   });
   els.pdfSelect.addEventListener("change", async () => {
     state.currentPdfId = els.pdfSelect.value;
@@ -266,6 +283,24 @@ function bindEvents() {
   els.pdfCanvasWrap.addEventListener("pointerdown", startPdfSelection);
   window.addEventListener("pointermove", movePdfSelection);
   window.addEventListener("pointerup", finishPdfSelection);
+  window.addEventListener("pointercancel", clearSelection);
+  window.addEventListener("resize", () => {
+    if (!els.pdfModal.classList.contains("hidden")) {
+      clearTimeout(renderPdfPage.resizeTimer);
+      renderPdfPage.resizeTimer = setTimeout(renderPdfPage, 150);
+    }
+  });
+  $("#cancelCropBtn").addEventListener("click", clearSelection);
+  $$("[data-crop-mode]").forEach((button) => button.addEventListener("click", () => {
+    state.cropMode = button.dataset.cropMode;
+    clearSelection();
+    els.pdfCanvasWrap.classList.toggle("pan-mode", state.cropMode === "pan");
+    $$("[data-crop-mode]").forEach((item) => {
+      const active = item.dataset.cropMode === state.cropMode;
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-pressed", String(active));
+    });
+  }));
   els.confirmCropBtn.addEventListener("click", confirmPdfCrop);
   $$(".answer-picks button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -291,10 +326,38 @@ function bindEvents() {
   els.splitOkBtn.addEventListener("click", applySplitModal);
   els.splitCancelBtn.addEventListener("click", () => closeModal(els.splitModal));
 
-  els.otherSettingsBtn.addEventListener("click", () => openModal(els.otherSettingsModal));
+  els.writtenType.addEventListener("change", applyExamMode);
+  els.includeTeacher.addEventListener("change", applyExamMode);
+  els.otherSettingsBtn.addEventListener("click", () => {
+    Object.entries(state.settings.printOptions).forEach(([key, value]) => {
+      const input = document.getElementById(key);
+      if (input.type === "checkbox") input.checked = value;
+      else input.value = value;
+    });
+    openModal(els.otherSettingsModal);
+  });
+  $("#otherSettingsOkBtn").addEventListener("click", () => {
+    Object.keys(state.settings.printOptions).forEach((key) => {
+      const input = document.getElementById(key);
+      state.settings.printOptions[key] = input.type === "checkbox" ? input.checked : input.value.trim();
+    });
+    closeModal(els.otherSettingsModal);
+  });
   els.watermarkToggle.addEventListener("change", () => {
-    if (els.watermarkToggle.checked) openModal(els.watermarkModal);
-    state.settings.watermark.enabled = els.watermarkToggle.checked;
+    if (els.watermarkToggle.checked) openWatermarkModal();
+    else state.settings.watermark.enabled = false;
+  });
+  $$("input[name='watermarkType']").forEach((input) => input.addEventListener("change", updateWatermarkType));
+  $("#watermarkImageInput").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      const src = await fileToDataUrl(file);
+      await loadImageFromSrc(src);
+      $("#watermarkImagePreview").src = src;
+      $("#watermarkImagePreview").classList.remove("hidden");
+    } catch { showToast("Filigran görseli açılamadı"); }
+    event.target.value = "";
   });
   [els.wmOpacity, els.wmSize, els.wmAngle].forEach((slider) => slider.addEventListener("input", updateWatermarkLabels));
   els.watermarkOkBtn.addEventListener("click", saveWatermark);
@@ -368,7 +431,7 @@ function bindEvents() {
 
   els.closeDocumentBtn.addEventListener("click", () => closeModal(els.documentModal));
   els.docZoomOutBtn.addEventListener("click", () => setDocumentZoom(state.docZoom - 0.1));
-  els.docZoomFitBtn.addEventListener("click", () => setDocumentZoom(1));
+  els.docZoomFitBtn.addEventListener("click", fitDocumentZoom);
   els.docZoomInBtn.addEventListener("click", () => setDocumentZoom(state.docZoom + 0.1));
   els.downloadDocBtn.addEventListener("click", downloadDocumentPdf);
   els.sideDownloadBtn.addEventListener("click", downloadDocumentPdf);
@@ -376,6 +439,11 @@ function bindEvents() {
   els.sidePdfEmailBtn.addEventListener("click", sharePdfByEmail);
   els.emailShareBtn.addEventListener("click", shareDocumentByEmail);
   els.emailAppBtn.addEventListener("click", openMailClient);
+  $("#docGroupSelect").addEventListener("change", async (event) => {
+    state.documentGroup = event.target.value;
+    await refreshDocumentPreview();
+  });
+  $(".doc-preview").addEventListener("scroll", updateDocumentPageSummary);
 
   els.questionGrid.addEventListener("dragover", (event) => event.preventDefault());
   els.questionGrid.addEventListener("drop", handleDrop);
@@ -389,9 +457,11 @@ function applyExamMode() {
   const isSheet = state.examKind === "sheet";
 
   els.writtenType.classList.toggle("hidden", !isWritten);
+  els.customExamTitle.classList.toggle("hidden", !isWritten || els.writtenType.value !== "custom");
   els.descriptionField.classList.toggle("hidden", isWritten);
   els.teacherOption.classList.toggle("hidden", isSheet);
-  els.answerKeyOption.classList.toggle("hidden", !isSheet);
+  els.teacherName.classList.toggle("hidden", isSheet || !els.includeTeacher.checked);
+  els.answerKeyOption.classList.remove("hidden");
   els.groupName.disabled = isSheet;
   els.groupName.style.opacity = isSheet ? "0.62" : "1";
 }
@@ -423,6 +493,7 @@ async function handleCropStartFiles(event) {
 
 async function handleCropStartDrop(event) {
   event.preventDefault();
+  event.stopPropagation();
   els.cropStartDrop.classList.remove("drag-over");
   const files = Array.from(event.dataTransfer?.files || []);
   if (files.length) await handleCropSourceFiles(files);
@@ -435,12 +506,12 @@ async function handleCropSourceFiles(files) {
     return;
   }
   closeModal(els.cropStartModal);
-  if (pdfFiles.length) await loadPdfFiles(pdfFiles, true);
-  if (images.length) await addImageFiles(images);
+  await loadCropSources([...pdfFiles, ...images]);
 }
 
 async function handleDrop(event) {
   event.preventDefault();
+  event.stopPropagation();
   const files = Array.from(event.dataTransfer?.files || []);
   if (files.length) {
     await handleMediaFileList(files);
@@ -462,23 +533,26 @@ function splitMediaFiles(files) {
 }
 
 async function loadPdfFiles(fileList, openAfter = true) {
+  return loadCropSources(fileList, openAfter);
+}
+
+async function loadCropSources(fileList, openAfter = true) {
   const files = Array.from(fileList || []);
   if (!files.length) return;
-  if (!window.pdfjsLib) {
-    showToast("PDF görüntüleyici yüklenemedi. İnternet bağlantısını kontrol et.");
-    return;
-  }
-
   for (const file of files) {
     try {
-      const buffer = await file.arrayBuffer();
-      const doc = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+      showToast(`${file.name} açılıyor`);
+      const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+      if (isPdf && !window.pdfjsLib) throw new Error("PDF görüntüleyici yüklenemedi");
+      const doc = isPdf ? await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise : null;
+      const image = isPdf ? null : await loadImageFromSrc(await fileToDataUrl(file));
       const pdf = {
         id: makeId(),
         name: file.name,
         doc,
+        image,
         page: 1,
-        pageCount: doc.numPages,
+        pageCount: doc?.numPages || 1,
       };
       state.pdfs.push(pdf);
       state.currentPdfId = pdf.id;
@@ -518,18 +592,45 @@ function getCurrentPdf() {
 async function renderPdfPage() {
   const pdf = getCurrentPdf();
   if (!pdf) return;
-
-  const page = await pdf.doc.getPage(pdf.page);
-  const viewport = page.getViewport({ scale: state.pdfScale });
-  els.pdfCanvas.width = Math.floor(viewport.width);
-  els.pdfCanvas.height = Math.floor(viewport.height);
-  els.pdfCanvas.style.width = `${els.pdfCanvas.width}px`;
-  els.pdfCanvas.style.height = `${els.pdfCanvas.height}px`;
-
-  await page.render({ canvasContext: pdfCtx, viewport }).promise;
-  renderPdfPageSelect(pdf);
-  renderPdfOverlays();
+  const version = ++state.cropRenderVersion;
+  state.cropRendering = true;
   clearSelection();
+  els.pdfViewer.setAttribute("aria-busy", "true");
+  try {
+    const page = pdf.doc ? await pdf.doc.getPage(pdf.page) : null;
+    const nativeSize = page ? page.getViewport({ scale: 1 }) : { width: pdf.image.naturalWidth, height: pdf.image.naturalHeight };
+    const fit = Math.max(0.1, (els.pdfViewer.clientWidth - 24) / nativeSize.width);
+    const displayScale = state.cropZoom === "fit" ? fit : Number(state.cropZoom);
+    const rasterScale = Math.min(Math.max(displayScale * 2, 1.5), 5000 / Math.max(nativeSize.width, nativeSize.height));
+    const buffer = document.createElement("canvas");
+    buffer.width = Math.ceil(nativeSize.width * rasterScale);
+    buffer.height = Math.ceil(nativeSize.height * rasterScale);
+    const context = buffer.getContext("2d");
+    if (page) await page.render({ canvasContext: context, viewport: page.getViewport({ scale: rasterScale }) }).promise;
+    else {
+      context.fillStyle = "white";
+      context.fillRect(0, 0, buffer.width, buffer.height);
+      context.drawImage(pdf.image, 0, 0, buffer.width, buffer.height);
+    }
+    if (version !== state.cropRenderVersion) return;
+    els.pdfCanvas.width = buffer.width;
+    els.pdfCanvas.height = buffer.height;
+    els.pdfCanvas.style.width = `${nativeSize.width * displayScale}px`;
+    els.pdfCanvas.style.height = `${nativeSize.height * displayScale}px`;
+    pdfCtx.drawImage(buffer, 0, 0);
+    renderPdfPageSelect(pdf);
+    renderPdfOverlays();
+    els.prevPdfPageBtn.disabled = pdf.page === 1;
+    els.nextPdfPageBtn.disabled = pdf.page === pdf.pageCount;
+  } catch (error) {
+    console.error(error);
+    showToast("Sayfa açılamadı. Dosyayı yeniden seçin.");
+  } finally {
+    if (version === state.cropRenderVersion) {
+      state.cropRendering = false;
+      els.pdfViewer.removeAttribute("aria-busy");
+    }
+  }
 }
 
 function renderPdfPageSelect(pdf) {
@@ -551,9 +652,9 @@ function renderPdfOverlays() {
       const number = getQuestionNumber(question.id);
       const label = question.asDescription ? "Açıklama" : `${number}. Soru`;
       return `
-        <div class="pdf-q-box ${question.loaded ? "" : "pending"}" style="left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px" data-id="${question.id}">
+        <div class="pdf-q-box ${question.loaded ? "" : "pending"} ${question.id === state.editingCropId ? "hidden" : ""}" style="left:${box.left}px;top:${box.top}px;width:${box.width}px;height:${box.height}px" data-id="${question.id}">
           <span class="pdf-q-label">${escapeHtml(label)}</span>
-          <button class="pdf-q-delete" type="button" data-delete-pdf-question="${question.id}">Soruyu Sil</button>
+          <div class="pdf-q-actions"><button type="button" data-edit-pdf-question="${question.id}" title="Kırpmayı düzenle"><i data-lucide="pencil"></i></button><button type="button" data-delete-pdf-question="${question.id}" title="Soruyu sil"><i data-lucide="trash-2"></i></button></div>
           ${question.loaded ? `<span class="loaded-badge"><i data-lucide="check"></i>Yüklendi</span>` : ""}
         </div>
       `;
@@ -563,15 +664,29 @@ function renderPdfOverlays() {
   els.pdfOverlayLayer.querySelectorAll("[data-delete-pdf-question]").forEach((button) => {
     button.addEventListener("click", () => removeQuestion(button.dataset.deletePdfQuestion));
   });
-  els.pdfQuestionTotal.textContent = `Toplam Soru: ${getPrintableQuestions().length}`;
+  els.pdfOverlayLayer.querySelectorAll("[data-edit-pdf-question]").forEach((button) => {
+    button.addEventListener("click", () => editPdfCrop(button.dataset.editPdfQuestion));
+  });
+  els.pdfQuestionTotal.textContent = `Seçilen: ${state.questions.filter((q) => q.pdfId === pdf.id).length}`;
   refreshIcons();
 }
 
 function startPdfSelection(event) {
-  if (!getCurrentPdf() || event.target.closest("button") || event.button !== 0) return;
+  if (!getCurrentPdf() || state.cropRendering || event.target.closest("button") || event.button !== 0) return;
+  event.preventDefault();
+  if (state.cropMode === "pan") {
+    state.panGesture = { x: event.clientX, y: event.clientY, left: els.pdfViewer.scrollLeft, top: els.pdfViewer.scrollTop, pointerId: event.pointerId };
+    els.pdfCanvasWrap.setPointerCapture(event.pointerId);
+    return;
+  }
   const point = clientToCanvasPoint(event);
+  const resize = event.target.dataset.resize;
+  const moving = event.target === els.selectionBox;
+  state.cropGesture = { mode: resize || (moving ? "move" : "new"), point, box: normalizedSelection(), pointerId: event.pointerId };
+  els.pdfCanvasWrap.setPointerCapture(event.pointerId);
   state.isSelecting = true;
-  state.selection = {
+  els.selectionConfirm.classList.add("hidden");
+  if (state.cropGesture.mode === "new") state.selection = {
     startX: point.x,
     startY: point.y,
     endX: point.x,
@@ -581,16 +696,46 @@ function startPdfSelection(event) {
 }
 
 function movePdfSelection(event) {
+  if (state.panGesture) {
+    const pan = state.panGesture;
+    if (event.pointerId === pan.pointerId) {
+      els.pdfViewer.scrollLeft = pan.left + pan.x - event.clientX;
+      els.pdfViewer.scrollTop = pan.top + pan.y - event.clientY;
+    }
+    return;
+  }
   if (!state.isSelecting || !state.selection) return;
   const point = clientToCanvasPoint(event);
-  state.selection.endX = point.x;
-  state.selection.endY = point.y;
+  const gesture = state.cropGesture;
+  if (event.pointerId !== gesture.pointerId) return;
+  if (gesture.mode === "move") {
+    const x = clamp(gesture.box.x + point.x - gesture.point.x, 0, els.pdfCanvas.width - gesture.box.width);
+    const y = clamp(gesture.box.y + point.y - gesture.point.y, 0, els.pdfCanvas.height - gesture.box.height);
+    state.selection = { startX: x, startY: y, endX: x + gesture.box.width, endY: y + gesture.box.height };
+  } else if (gesture.mode !== "new") {
+    const b = gesture.box;
+    state.selection = {
+      startX: gesture.mode.includes("w") ? Math.min(point.x, b.x + b.width - 12) : b.x,
+      endX: gesture.mode.includes("e") ? Math.max(point.x, b.x + 12) : b.x + b.width,
+      startY: gesture.mode.includes("n") ? Math.min(point.y, b.y + b.height - 12) : b.y,
+      endY: gesture.mode.includes("s") ? Math.max(point.y, b.y + 12) : b.y + b.height,
+    };
+  } else {
+    state.selection.endX = point.x;
+    state.selection.endY = point.y;
+  }
   drawSelection();
 }
 
 function finishPdfSelection() {
+  if (state.panGesture) {
+    if (els.pdfCanvasWrap.hasPointerCapture(state.panGesture.pointerId)) els.pdfCanvasWrap.releasePointerCapture(state.panGesture.pointerId);
+    state.panGesture = null;
+    return;
+  }
   if (!state.isSelecting) return;
   state.isSelecting = false;
+  if (els.pdfCanvasWrap.hasPointerCapture(state.cropGesture.pointerId)) els.pdfCanvasWrap.releasePointerCapture(state.cropGesture.pointerId);
   const box = normalizedSelection();
   if (!box || box.width < 24 || box.height < 24) {
     clearSelection();
@@ -613,13 +758,18 @@ function drawSelection() {
 }
 
 function positionSelectionConfirm(box) {
-  state.selectedAnswer = "";
-  $$(".answer-picks button").forEach((button) => button.classList.remove("active"));
+  if (state.cropGesture?.mode === "new" && !state.editingCropId) state.selectedAnswer = "";
+  $$(".answer-picks button").forEach((button) => button.classList.toggle("active", state.selectedAnswer === button.dataset.answer));
   const displayBox = canvasToDisplayBox(box);
-  const canvasBottom = els.pdfCanvas.offsetTop + els.pdfCanvas.getBoundingClientRect().height;
+  els.selectionConfirm.classList.remove("hidden");
+  const width = els.selectionConfirm.offsetWidth;
+  const height = els.selectionConfirm.offsetHeight;
+  const minLeft = els.pdfViewer.scrollLeft + 4;
+  const maxLeft = Math.max(minLeft, minLeft + els.pdfViewer.clientWidth - width - 8);
+  const maxTop = Math.min(els.pdfCanvasWrap.offsetHeight - height - 4, els.pdfViewer.scrollTop + els.pdfViewer.clientHeight - height - 4);
   Object.assign(els.selectionConfirm.style, {
-    left: `${displayBox.left + Math.max(0, displayBox.width - 320) / 2}px`,
-    top: `${Math.min(displayBox.top + displayBox.height + 8, canvasBottom - 42)}px`,
+    left: `${clamp(displayBox.left + (displayBox.width - width) / 2, minLeft, maxLeft)}px`,
+    top: `${clamp(displayBox.top + displayBox.height + 8, els.pdfViewer.scrollTop + 4, maxTop)}px`,
   });
   els.selectionConfirm.classList.remove("hidden");
 }
@@ -661,9 +811,10 @@ function confirmPdfCrop() {
   if (!pdf || !box) return;
 
   const crop = cropCanvas(els.pdfCanvas, box);
-  const trimmed = trimCanvas(crop);
+  const trimmed = state.cropTrim ? trimCanvas(crop) : crop;
+  const existing = findQuestion(state.editingCropId);
   const question = {
-    id: makeId(),
+    id: existing?.id || makeId(),
     kind: "image",
     src: trimmed.toDataURL("image/png"),
     source: pdf.name,
@@ -677,12 +828,31 @@ function confirmPdfCrop() {
     page: pdf.page,
     box: canvasToRelativeBox(box),
     createdAt: new Date().toISOString(),
+    ...existing,
+    src: trimmed.toDataURL("image/png"),
+    answer: state.selectedAnswer || "",
+    box: canvasToRelativeBox(box),
   };
-  state.questions.push(question);
+  if (existing) Object.assign(existing, question);
+  else state.questions.push(question);
   clearSelection();
   renderPdfOverlays();
   renderQuestionGrid();
   updateBadges();
+}
+
+function editPdfCrop(id) {
+  const question = findQuestion(id);
+  if (!question || state.cropRendering) return;
+  if (state.cropMode === "pan") $("[data-crop-mode='select']").click();
+  state.editingCropId = id;
+  const box = relativeToCanvasBox(question.box);
+  state.selection = { startX: box.x, startY: box.y, endX: box.x + box.width, endY: box.y + box.height };
+  state.cropGesture = null;
+  state.selectedAnswer = question.answer || "";
+  renderPdfOverlays();
+  drawSelection();
+  positionSelectionConfirm(box);
 }
 
 function cropCanvas(canvas, box) {
@@ -733,16 +903,24 @@ function trimCanvas(canvas) {
 }
 
 function clearSelection() {
+  const pointerId = state.panGesture?.pointerId ?? state.cropGesture?.pointerId;
+  if (pointerId != null && els.pdfCanvasWrap.hasPointerCapture(pointerId)) els.pdfCanvasWrap.releasePointerCapture(pointerId);
+  state.panGesture = null;
   state.selection = null;
   state.isSelecting = false;
+  const wasEditing = state.editingCropId;
+  state.editingCropId = null;
+  state.cropGesture = null;
   els.selectionBox.classList.add("hidden");
   els.selectionConfirm.classList.add("hidden");
+  if (wasEditing) renderPdfOverlays();
 }
 
 async function changePdfPage(delta) {
   const pdf = getCurrentPdf();
   if (!pdf) return;
   pdf.page = clamp(pdf.page + delta, 1, pdf.pageCount);
+  els.pdfViewer.scrollTop = 0;
   await renderPdfPage();
 }
 
@@ -750,6 +928,7 @@ async function setPdfPage(page) {
   const pdf = getCurrentPdf();
   if (!pdf) return;
   pdf.page = clamp(page, 1, pdf.pageCount);
+  els.pdfViewer.scrollTop = 0;
   await renderPdfPage();
 }
 
@@ -763,7 +942,8 @@ function markPdfQuestionsLoaded() {
     });
   renderPdfOverlays();
   renderQuestionGrid();
-  showToast(`${state.questions.length} öğe yüklendi`);
+  updateBadges();
+  showToast(`${state.questions.filter((q) => q.pdfId === pdf.id).length} öğe yüklendi`);
 }
 
 function closePdfModal() {
@@ -836,17 +1016,17 @@ function ensureSections() {
   state.sections = Array.from(byStart.values()).sort((a, b) => a.start - b.start);
 }
 
-function getQuestionSections() {
+function getQuestionSections(questions = state.questions) {
   ensureSections();
   return state.sections.map((section, index) => {
     const next = state.sections[index + 1];
-    const end = next ? next.start : state.questions.length;
+    const end = next ? next.start : questions.length;
     return {
       section,
       sectionIndex: index,
       start: section.start,
       end,
-      questions: state.questions.slice(section.start, end),
+      questions: questions.slice(section.start, end),
       nextSection: next || null,
     };
   });
@@ -856,19 +1036,19 @@ function shouldShowSections() {
   return state.sections.length > 1 || state.sections.some((section) => section.title.trim());
 }
 
-function getQuestionNumberMap() {
+function getQuestionNumberMap(questions = state.questions, includePending = true) {
   ensureSections();
   const map = new Map();
   let sectionIndex = 0;
   let totalNumber = 0;
   let sectionNumber = 0;
-  for (let index = 0; index < state.questions.length; index += 1) {
+  for (let index = 0; index < questions.length; index += 1) {
     if (state.sections[sectionIndex + 1]?.start === index) {
       sectionIndex += 1;
       sectionNumber = 0;
     }
-    const question = state.questions[index];
-    if (question.asDescription) continue;
+    const question = questions[index];
+    if (question.asDescription || (!includePending && question.loaded === false)) continue;
     totalNumber += 1;
     sectionNumber += 1;
     const section = state.sections[sectionIndex] || state.sections[0];
@@ -885,10 +1065,11 @@ function getQuestionGap(question) {
 
 function renderQuestionGrid() {
   normalizeWorkspaceState();
-  els.emptyState.classList.toggle("hidden", state.questions.length > 0);
-  els.floatingDock.classList.toggle("hidden", state.questions.length === 0);
-  els.loadedCountText.textContent = `${state.questions.length} öğe yüklendi`;
-  const numberMap = getQuestionNumberMap();
+  const count = state.questions.filter((q) => q.loaded !== false).length;
+  els.emptyState.classList.toggle("hidden", count > 0);
+  els.floatingDock.classList.toggle("hidden", count === 0);
+  els.loadedCountText.textContent = `${count} öğe yüklendi`;
+  const numberMap = getQuestionNumberMap(state.questions, false);
   if (shouldShowSections()) {
     els.questionGrid.classList.add("sectioned");
     els.questionGrid.innerHTML = getQuestionSections()
@@ -959,6 +1140,7 @@ function renderQuestionSection(sectionInfo, numberMap) {
 }
 
 function renderQuestionCard(question, index, numberMap = getQuestionNumberMap()) {
+  if (question.loaded === false) return "";
   const number = numberMap.get(question.id) || "";
   const cardTitle = question.asDescription
     ? `<h3 class="description-title">Açıklama</h3>`
@@ -1254,8 +1436,16 @@ function updateWatermarkLabels() {
 }
 
 function saveWatermark() {
+  const type = $("input[name='watermarkType']:checked").value;
+  const image = $("#watermarkImagePreview").getAttribute("src") || "";
+  if ((type === "image" && !image) || (type === "text" && !els.watermarkText.value.trim())) {
+    showToast(type === "image" ? "Filigran için bir görsel seçin" : "Filigran metnini yazın");
+    return;
+  }
   state.settings.watermark = {
     enabled: true,
+    type,
+    image,
     text: els.watermarkText.value.trim(),
     opacity: Number(els.wmOpacity.value),
     size: Number(els.wmSize.value),
@@ -1264,6 +1454,30 @@ function saveWatermark() {
   };
   els.watermarkToggle.checked = true;
   closeModal(els.watermarkModal);
+}
+
+function openWatermarkModal() {
+  const wm = state.settings.watermark;
+  $("input[name='watermarkType'][value='text']").checked = wm.type !== "image";
+  $("input[name='watermarkType'][value='image']").checked = wm.type === "image";
+  els.watermarkText.value = wm.text;
+  els.wmOpacity.value = wm.opacity;
+  els.wmSize.value = Math.min(100, wm.size);
+  els.wmAngle.value = wm.angle;
+  els.wmColor.value = wm.color;
+  if (wm.image) $("#watermarkImagePreview").src = wm.image;
+  else $("#watermarkImagePreview").removeAttribute("src");
+  $("#watermarkImagePreview").classList.toggle("hidden", !wm.image);
+  updateWatermarkType();
+  updateWatermarkLabels();
+  openModal(els.watermarkModal);
+}
+
+function updateWatermarkType() {
+  const isImage = $("input[name='watermarkType']:checked").value === "image";
+  els.watermarkText.classList.toggle("hidden", isImage);
+  $("#watermarkImageWrap").classList.toggle("hidden", !isImage);
+  els.wmColor.closest("label").classList.toggle("hidden", isImage);
 }
 
 function openEditor() {
@@ -1477,539 +1691,363 @@ function drawingPoint(event) {
 }
 
 async function openDocumentPreview() {
-  const margins = state.settings.margins;
-  els.docName.textContent = (els.testTitle.value.trim() || "MATEMATİK").toUpperCase();
-  els.finalPaper.className = `final-paper paper-${els.paperSize.value} orientation-${els.orientation.value}`;
-  els.finalPaper.style.setProperty("--paper-margin-top", `${margins.top}cm`);
-  els.finalPaper.style.setProperty("--paper-margin-right", `${margins.right}cm`);
-  els.finalPaper.style.setProperty("--paper-margin-bottom", `${margins.bottom}cm`);
-  els.finalPaper.style.setProperty("--paper-margin-left", `${margins.left}cm`);
-  setDocumentZoom(1, false);
-  els.finalPaper.innerHTML = `<div class="paper-loading">Sayfalar hazırlanıyor...</div>`;
+  if (!state.questions.some((q) => q.loaded !== false)) {
+    showToast("Önce soruları ekleyin. Kırpma aracında Yükle düğmesini kullanın.");
+    return;
+  }
+  const count = state.examKind === "sheet" ? 0 : Number(els.groupName.value);
+  const groups = [2, 4].includes(count) ? ["A", "B", "C", "D"].slice(0, count) : [""];
+  state.documentVariants = groups.map((group, index) => ({ group, questions: createBookletQuestions(index) }));
+  state.documentGroup = groups[0];
+  $("#docGroupWrap").classList.toggle("hidden", groups.length === 1);
+  $("#docGroupSelect").innerHTML = groups.map((g) => `<option value="${g}">${g} Kitapçığı</option>`).join("");
+  await refreshDocumentPreview();
+}
+
+function createBookletQuestions(variant) {
+  if (!variant) return state.questions.slice();
+  return getQuestionSections().flatMap(({ questions }) => {
+    // A shared passage and its following questions travel together between booklets.
+    const bundles = [];
+    let passage = null;
+    for (const question of questions) {
+      if (question.asDescription) { passage = [question]; bundles.push(passage); }
+      else if (passage) passage.push(question);
+      else bundles.push([question]);
+    }
+    if (bundles.length < 2) return questions.slice();
+    const shift = variant % bundles.length;
+    return bundles.slice(shift).concat(bundles.slice(0, shift)).flat();
+  });
+}
+
+function currentDocumentQuestions() {
+  return state.documentVariants.find((v) => v.group === state.documentGroup)?.questions || state.questions;
+}
+
+function getDocumentTitle() {
+  const title = els.testTitle.value.trim() || "MATEMATİK";
+  return state.settings.printOptions.preserveTitleCase ? title : title.toLocaleUpperCase("tr-TR");
+}
+
+function setDocumentBusy(busy) {
+  [els.downloadDocBtn, els.sideDownloadBtn, els.sideEmailBtn, els.sidePdfEmailBtn, $("#docGroupSelect")].forEach((button) => { button.disabled = busy; });
+}
+
+async function refreshDocumentPreview() {
+  const version = (state.documentRenderVersion || 0) + 1;
+  state.documentRenderVersion = version;
+  state.pdfExportPromise = null;
+  setDocumentBusy(true);
   openModal(els.documentModal);
-  els.finalPaper.innerHTML = await buildFinalPaperHtml();
-  updateDocumentPageSummary();
-  if (window.lucide) window.lucide.createIcons();
+  try {
+    const layout = getPaperLayoutMetrics();
+    els.docName.textContent = getDocumentTitle();
+    els.finalPaper.className = `final-paper paper-${els.paperSize.value} orientation-${els.orientation.value}`;
+    els.finalPaper.style.setProperty("--paper-width", `${layout.pageWidth}px`);
+    els.finalPaper.style.setProperty("--paper-height", `${layout.pageHeight}px`);
+    for (const side of ["top", "right", "bottom", "left"]) els.finalPaper.style.setProperty(`--paper-margin-${side}`, `${state.settings.margins[side]}cm`);
+    els.finalPaper.innerHTML = '<div class="paper-loading">Sayfalar hazırlanıyor...</div>';
+    const html = await buildFinalPaperHtml();
+    if (version !== state.documentRenderVersion) return;
+    els.finalPaper.innerHTML = html;
+    $(".doc-preview").scrollTop = 0;
+    fitDocumentZoom();
+    updateDocumentPageSummary();
+  } catch (error) {
+    console.error(error);
+    els.finalPaper.innerHTML = `<div class="paper-loading">${escapeHtml(error.message || "Sayfalar hazırlanamadı")}</div>`;
+    showToast("Sayfalar hazırlanamadı");
+  } finally {
+    if (version === state.documentRenderVersion) setDocumentBusy(false);
+  }
+}
+
+function getPaperLayoutMetrics() {
+  const sizes = { a4: [210, 297], a5: [148, 210] };
+  let [widthMm, heightMm] = sizes[els.paperSize.value] || sizes.a4;
+  if (els.orientation.value === "landscape") [widthMm, heightMm] = [heightMm, widthMm];
+  const pxPerMm = 96 / 25.4;
+  const m = state.settings.margins;
+  const contentWidth = (widthMm - 10 * (m.left + m.right)) * pxPerMm;
+  const contentHeight = (heightMm - 10 * (m.top + m.bottom)) * pxPerMm;
+  if (contentWidth < 100 || contentHeight < 160) throw new Error("Kenar boşluklarını küçültün; sorular için yeterli alan kalmadı.");
+  const columns = Number(els.columnCount.value) || 2;
+  return { widthMm, heightMm, pxPerMm, pageWidth: widthMm * pxPerMm, pageHeight: heightMm * pxPerMm, contentWidth, contentHeight, columns, columnGap: 18, columnWidth: (contentWidth - 18 * (columns - 1)) / columns };
+}
+
+function buildDocumentMeta() {
+  const options = state.settings.printOptions;
+  const exam = state.examKind === "written" ? (els.writtenType.value === "custom" ? els.customExamTitle.value.trim() : els.writtenType.value) : els.descriptionField.value.trim();
+  const group = state.documentGroup ? `${state.documentGroup} Kitapçığı` : (state.examKind !== "sheet" && !["Grup Yok", "2", "4"].includes(els.groupName.value) ? els.groupName.value : "");
+  const items = [
+    els.schoolName.value.trim(), exam,
+    els.className.value.trim() ? `Sınıf/Şube: ${els.className.value.trim()}` : "",
+    !options.hideBooklet ? group : "",
+    state.examKind !== "sheet" && els.includeTeacher.checked ? `Öğretmen: ${els.teacherName.value.trim() || "__________________"}` : "",
+  ].filter(Boolean);
+  return items.length ? `<section class="final-meta ${options.compactMeta ? "compact" : ""} ${options.centerMeta ? "centered" : ""}">${items.map((text) => `<span>${escapeHtml(text)}</span>`).join("")}</section>` : "";
+}
+
+function buildWatermarkHtml(layout) {
+  const wm = state.settings.watermark;
+  if (!wm.enabled || (wm.type === "image" ? !wm.image : !wm.text)) return "";
+  const angle = state.settings.printOptions.negativeWatermark ? -Math.abs(wm.angle) : wm.angle;
+  const size = clamp(wm.size, 10, 100) / 100;
+  const style = `opacity:${wm.opacity / 100};transform:translate(-50%,-50%) rotate(${angle}deg);width:${layout.contentWidth * size}px;color:${wm.color}`;
+  if (wm.type === "image") return `<div class="paper-watermark" style="${style}"><img src="${wm.image}" alt="" /></div>`;
+  const ctx = document.createElement("canvas").getContext("2d");
+  ctx.font = "700 100px Arial";
+  const fontSize = Math.min(120, layout.contentWidth * size * 100 / Math.max(1, ctx.measureText(wm.text).width));
+  return `<div class="paper-watermark" style="${style};font-size:${fontSize}px">${escapeHtml(wm.text)}</div>`;
 }
 
 async function buildFinalPaperHtml() {
-  const title = (els.testTitle.value.trim() || "MATEMATİK").toUpperCase();
-  const school = els.schoolName.value.trim();
-  const classInfo = els.className.value.trim();
-  const groupInfo = els.groupName.value !== "Grup Yok" ? els.groupName.value : "";
-  const examInfo = state.examKind === "written" ? els.writtenType.value : els.descriptionField.value.trim();
-  const teacherInfo = els.includeTeacher.checked ? `<span>Öğretmen: __________________</span>` : "";
-  const columns = els.columnCount.value;
-  const watermark = state.settings.watermark.enabled && state.settings.watermark.text
-    ? `<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(${state.settings.watermark.angle}deg);font-size:${state.settings.watermark.size}px;color:${state.settings.watermark.color};opacity:${state.settings.watermark.opacity / 100};pointer-events:none">${escapeHtml(state.settings.watermark.text)}</div>`
-    : "";
-
-  const metaItems = [
-    school ? `<span>Okul: ${escapeHtml(school)}</span>` : "",
-    examInfo ? `<span>${escapeHtml(examInfo)}</span>` : "",
-    classInfo ? `<span>Sınıf/Şube: ${escapeHtml(classInfo)}</span>` : "",
-    groupInfo ? `<span>${escapeHtml(groupInfo)}</span>` : "",
-    teacherInfo,
-  ]
-    .filter(Boolean)
-    .join("");
-
-  const layout = getPaperLayoutMetrics(Boolean(metaItems));
-  const questions = await buildPrintableQuestionItems(layout);
-  const pages = paginatePrintableItems(questions, layout);
-  appendSupplementalPrintSections(pages, layout);
-  const smartClass = els.smartLayout.checked ? " smart" : "";
-
-  return pages
-    .map(
-      (page, index) => `
-    <section class="paper-page" data-page="${index + 1}">
-      ${watermark}
-      <h1 class="final-title"><span>${escapeHtml(title)}</span></h1>
-      ${index === 0 && metaItems ? `<section class="final-meta">${metaItems}</section>` : ""}
-      ${renderPrintablePageSections(page.sections, columns, smartClass)}
-      <footer><span>${index + 1}</span></footer>
-    </section>
-  `,
-    )
-    .join("");
+  const layout = getPaperLayoutMetrics();
+  const title = `<h1 class="final-title"><span>${escapeHtml(getDocumentTitle())}</span></h1>`;
+  const meta = buildDocumentMeta();
+  const measure = document.createElement("div");
+  measure.className = "print-measure";
+  document.body.appendChild(measure);
+  try {
+    await document.fonts.ready;
+    const measureHtml = async (html, width) => {
+      measure.style.width = `${width}px`;
+      measure.innerHTML = html;
+      await Promise.all(Array.from(measure.querySelectorAll("img"), (img) => img.decode()));
+      const element = measure.firstElementChild;
+      const css = getComputedStyle(element);
+      return { height: element.getBoundingClientRect().height + parseFloat(css.marginTop || 0) + parseFloat(css.marginBottom || 0), element };
+    };
+    const headerHeight = (await measureHtml(title, layout.contentWidth)).height;
+    const metaHeight = meta ? (await measureHtml(meta, layout.contentWidth)).height : 0;
+    layout.firstPageHeight = layout.contentHeight - headerHeight - metaHeight - 18;
+    layout.nextPageHeight = layout.contentHeight - headerHeight - 18;
+    if (layout.firstPageHeight < 70) throw new Error("Başlık ve açıklama çok uzun. Açıklamayı veya kenar boşluklarını kısaltın.");
+    const items = await buildPrintableQuestionItems(layout, measureHtml);
+    const pages = paginatePrintableItems(items, layout);
+    const footerText = state.settings.printOptions.lineTextToggle ? state.settings.printOptions.lineTextValue : "";
+    return pages.map((page, index) => `<section class="paper-page" data-page="${index + 1}">${title}${index === 0 ? meta : ""}<div class="paper-content">${renderPrintablePageSections(page.sections, layout.columns)}</div>${buildWatermarkHtml(layout)}<footer>${footerText ? `<small>${escapeHtml(footerText)}</small>` : ""}<span>${index + 1}</span></footer></section>`).join("");
+  } finally { measure.remove(); }
 }
 
-function getPaperLayoutMetrics(hasMeta) {
-  const size = els.paperSize.value;
-  const orientation = els.orientation.value;
-  const pageSizes = {
-    a4: { portrait: { width: 720, height: 1018 }, landscape: { width: 1018, height: 720 } },
-    a5: { portrait: { width: 560, height: 795 }, landscape: { width: 795, height: 560 } },
-  };
-  const page = pageSizes[size]?.[orientation] || pageSizes.a4.portrait;
-  const margins = state.settings.margins;
-  const cmToPx = 37.795;
-  const contentWidth = page.width - (margins.left + margins.right) * cmToPx;
-  const contentHeight = page.height - (margins.top + margins.bottom) * cmToPx;
-  const columns = Number(els.columnCount.value) || 2;
-  const columnGap = 18;
-  const titleHeight = 38;
-  const metaHeight = hasMeta ? 42 : 0;
-  const footerHeight = 42;
-  const firstPageHeight = Math.max(160, contentHeight - titleHeight - metaHeight - footerHeight);
-  const nextPageHeight = Math.max(160, contentHeight - titleHeight - footerHeight);
-  const columnWidth = (contentWidth - columnGap * (columns - 1)) / columns;
-
-  return {
-    pageWidth: page.width,
-    pageHeight: page.height,
-    contentWidth,
-    firstPageHeight,
-    nextPageHeight,
-    columns,
-    columnGap,
-    columnWidth,
-  };
-}
-
-async function buildPrintableQuestionItems(layout) {
-  const gap = state.settings.globalGap || 14;
-  const mmToPx = 3.78;
+async function buildPrintableQuestionItems(layout, measureHtml) {
+  const questions = currentDocumentQuestions();
+  const numbers = getQuestionNumberMap(questions, false);
   const items = [];
-  const numberMap = getQuestionNumberMap();
-  const showSections = shouldShowSections();
-
-  for (const sectionInfo of getQuestionSections()) {
-    const { section, questions, start } = sectionInfo;
-    const sectionTitle = section.title.trim();
-    if (showSections && (sectionTitle || (start > 0 && section.newPage))) {
-      items.push({
-        type: "section-title",
-        html: sectionTitle ? `<section class="final-section-title">${escapeHtml(sectionTitle)}</section>` : "",
-        fullWidth: section.newPage || layout.columns === 1,
-        sectionStart: true,
-        forceNewPage: start > 0 && section.newPage,
-        estimatedHeight: sectionTitle ? 34 : 0,
-      });
+  for (const info of getQuestionSections(questions)) {
+    const { section, start } = info;
+    const visible = info.questions.filter((q) => q.loaded !== false);
+    if (!visible.length) continue;
+    if (shouldShowSections()) {
+      const html = section.title.trim() ? `<section class="final-section-title">${escapeHtml(section.title)}</section>` : "";
+      items.push({ html, sectionStart: true, keepWithNext: true, fullWidth: section.newPage || layout.columns === 1, forceNewPage: start > 0 && section.newPage, estimatedHeight: html ? (await measureHtml(html, layout.columnWidth)).height : 0 });
     }
-
-    for (const [offset, question] of questions.entries()) {
-      const rawIndex = start + offset;
-      const number = numberMap.get(question.id) || "";
-      const fullWidth = Boolean(question.expanded);
-      const printWidth = fullWidth ? layout.contentWidth : layout.columnWidth;
-      const questionGap = getQuestionGap(question);
-      const content =
-        question.kind === "manual"
-          ? `<div>${question.html}</div>`
-          : `<img src="${question.src}" alt="${number ? `${number}. soru` : "açıklama"}" />`;
-      const className = `final-question ${question.expanded ? "expanded" : ""} ${question.asDescription ? "description" : ""}`;
-      const numberHtml = question.asDescription ? "" : `<b>${escapeHtml(number)}.</b>`;
-      const html = `<article class="${className}" data-raw-index="${rawIndex}" style="--question-gap:${questionGap}mm">${numberHtml}${content}</article>`;
-      const contentHeight =
-        question.kind === "manual"
-          ? estimateManualQuestionHeight(question.html, printWidth, question.expanded)
-          : await estimateImageQuestionHeight(question.src, printWidth);
-      items.push({
-        html,
-        fullWidth,
-        estimatedHeight: Math.ceil(contentHeight + questionGap * mmToPx + 16),
-      });
+    for (const q of visible) {
+      const number = numbers.get(q.id) || "";
+      const width = q.expanded ? layout.contentWidth : layout.columnWidth;
+      const gap = getQuestionGap(q);
+      const gapCss = q.customGap || state.settings.globalGap > 0 ? `${gap}mm` : "12px";
+      const numberHtml = q.asDescription ? "" : `<b class="printed-question-number">${escapeHtml(number)}.</b>`;
+      const content = q.kind === "manual" ? `<div class="printed-content">${q.html}</div>` : `<img src="${q.src}" alt="${escapeHtml(number)}. soru" />`;
+      let html = `<article class="final-question ${q.expanded ? "expanded" : ""} ${q.asDescription ? "description" : ""}" data-question-id="${q.id}" style="--question-gap:${gapCss}">${numberHtml}${content}</article>`;
+      let result = await measureHtml(html, width);
+      // Fit only a source that is taller than a complete page.
+      if (result.height > layout.nextPageHeight) {
+        const available = Math.max(40, layout.nextPageHeight - gap * layout.pxPerMm - 40);
+        const img = result.element.querySelector(":scope > img");
+        if (img) img.style.cssText = `width:auto;max-width:100%;height:auto;max-height:${available}px;object-fit:contain`;
+        else {
+          const contentNode = result.element.querySelector(".printed-content");
+          const canvas = await html2canvas(contentNode, { scale: 1.5, logging: false, backgroundColor: "#ffffff" });
+          contentNode.innerHTML = `<img src="${canvas.toDataURL("image/png")}" style="width:auto;max-width:100%;max-height:${available}px;object-fit:contain" alt="" />`;
+        }
+        html = result.element.outerHTML;
+        result = await measureHtml(html, width);
+      }
+      items.push({ html, fullWidth: Boolean(q.expanded), keepWithNext: Boolean(q.asDescription), estimatedHeight: result.height });
     }
   }
-
+  for (const info of getQuestionSections(questions)) {
+    const real = info.questions.filter((q) => q.loaded !== false && !q.asDescription);
+    const sectionName = info.section.title ? ` · ${escapeHtml(info.section.title)}` : "";
+    if (els.includeAnswerKey.checked) {
+      for (let i = 0; i < real.length; i += 40) {
+        const text = real.slice(i, i + 40).map((q) => `${numbers.get(q.id)}: ${q.answer || "-"}`).join("   ");
+        const html = `<section class="final-extra final-answer-key"><b>Cevap Anahtarı${sectionName}</b><p>${escapeHtml(text)}</p></section>`;
+        items.push({ html, fullWidth: true, estimatedHeight: (await measureHtml(html, layout.contentWidth)).height });
+      }
+    }
+    if (els.includeOptic.checked) {
+      for (let i = 0; i < real.length; i += 30) {
+        const rows = real.slice(i, i + 30).map((q) => `<div><span>${escapeHtml(numbers.get(q.id))}</span>${["A","B","C","D","E"].map((a) => `<em>${a}</em>`).join("")}</div>`).join("");
+        const html = `<section class="final-optic"><b>Optik Form${sectionName}</b>${rows}</section>`;
+        items.push({ html, fullWidth: true, estimatedHeight: (await measureHtml(html, layout.contentWidth)).height });
+      }
+    }
+  }
   return items;
 }
 
-async function estimateImageQuestionHeight(src, printWidth) {
-  try {
-    const image = await loadImageFromSrc(src);
-    const naturalWidth = image.naturalWidth || image.width || 680;
-    const naturalHeight = image.naturalHeight || image.height || 360;
-    return Math.max(42, printWidth * (naturalHeight / naturalWidth));
-  } catch (error) {
-    return Math.max(120, printWidth * 0.52);
-  }
-}
-
-function estimateManualQuestionHeight(html, printWidth, expanded) {
-  const text = stripHtml(html).trim();
-  const charsPerLine = Math.max(22, Math.floor(printWidth / (expanded ? 7 : 5)));
-  const lines = Math.max(4, Math.ceil(text.length / charsPerLine));
-  return lines * (expanded ? 18 : 13) + 24;
-}
-
-function createPrintPage(layout, pageIndex) {
-  return {
-    sections: [],
-    columnHeights: Array.from({ length: layout.columns }, () => 0),
-    maxHeight: pageIndex === 0 ? layout.firstPageHeight : layout.nextPageHeight,
-  };
+function createPrintPage(layout, index) {
+  return { sections: [], columnHeights: Array(layout.columns).fill(0), maxHeight: index === 0 ? layout.firstPageHeight : layout.nextPageHeight };
 }
 
 function paginatePrintableItems(items, layout) {
   const pages = [createPrintPage(layout, 0)];
-  const smartLayout = els.smartLayout.checked;
-  let flowColumnIndex = 0;
-
-  const currentPage = () => pages[pages.length - 1];
-  const addPage = () => {
-    pages.push(createPrintPage(layout, pages.length));
-    flowColumnIndex = 0;
-    return currentPage();
-  };
-  const addColumnSection = (page) => {
-    const last = page.sections[page.sections.length - 1];
-    if (last?.type === "columns") return last;
-    const section = {
-      type: "columns",
-      columns: Array.from({ length: layout.columns }, () => []),
-    };
-    page.sections.push(section);
-    return section;
-  };
-
-  for (const item of items) {
-    let page = currentPage();
-    if (item.forceNewPage && page.sections.length) {
-      page = addPage();
-    }
-    const itemHeight = Math.min(item.estimatedHeight, page.maxHeight - 8);
-
+  let flowColumn = 0;
+  const addPage = () => { const page = createPrintPage(layout, pages.length); pages.push(page); flowColumn = 0; return page; };
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    let page = pages[pages.length - 1];
+    if (item.forceNewPage && page.sections.length) page = addPage();
+    let needed = item.estimatedHeight;
+    let follower = i;
+    while (items[follower]?.keepWithNext && items[follower + 1] && !items[follower + 1].forceNewPage) needed += items[++follower].estimatedHeight;
+    if (needed > layout.nextPageHeight) needed = item.estimatedHeight;
     if (item.fullWidth) {
       let used = Math.max(...page.columnHeights);
-      if (used > 0 && used + itemHeight > page.maxHeight) {
-        page = addPage();
-        used = 0;
-      }
-      page.sections.push({ type: "full", html: item.html });
-      page.columnHeights = page.columnHeights.map(() => used + itemHeight);
-      flowColumnIndex = 0;
+      if (used + needed > page.maxHeight && (used > 0 || pages.length === 1)) { page = addPage(); used = 0; }
+      if (item.html) page.sections.push({ type: "full", html: item.html });
+      page.columnHeights.fill(used + item.estimatedHeight);
+      flowColumn = 0;
       continue;
     }
-
-    let columnIndex = smartLayout ? indexOfShortestColumn(page.columnHeights) : flowColumnIndex;
-    if (!smartLayout && item.sectionStart && page.columnHeights[columnIndex] > 0) {
-      if (columnIndex < layout.columns - 1) {
-        columnIndex += 1;
-      } else {
-        page = addPage();
-        columnIndex = 0;
-      }
+    let col = els.smartLayout.checked ? indexOfShortestColumn(page.columnHeights) : flowColumn;
+    if (item.sectionStart && page.columnHeights[col] > 0) col++;
+    if (col >= layout.columns) { page = addPage(); col = 0; }
+    if (page.columnHeights[col] + needed > page.maxHeight) {
+      let next = col + 1;
+      while (next < layout.columns && page.columnHeights[next] + needed > page.maxHeight) next++;
+      if (next < layout.columns) col = next;
+      else { page = addPage(); col = 0; }
     }
-    if (page.columnHeights[columnIndex] > 0 && page.columnHeights[columnIndex] + itemHeight > page.maxHeight) {
-      if (!smartLayout && columnIndex < layout.columns - 1) {
-        columnIndex += 1;
-      } else {
-        page = addPage();
-        columnIndex = 0;
-      }
+    let band = page.sections[page.sections.length - 1];
+    if (band?.type !== "columns") {
+      band = { type: "columns", columns: Array.from({ length: layout.columns }, () => []) };
+      page.sections.push(band);
     }
-    const section = addColumnSection(page);
-    section.columns[columnIndex].push(item.html);
-    page.columnHeights[columnIndex] += itemHeight;
-    if (!smartLayout) flowColumnIndex = columnIndex;
+    band.columns[col].push(item.html);
+    page.columnHeights[col] += item.estimatedHeight;
+    flowColumn = col;
   }
-
-  const filledPages = pages.filter((page) => page.sections.length);
-  return filledPages.length ? filledPages : [createPrintPage(layout, 0)];
+  return pages.filter((p) => p.sections.length);
 }
 
-function appendSupplementalPrintSections(pages, layout) {
-  const extras = [];
-  const printableQuestions = getPrintableQuestions();
-  const numberMap = getQuestionNumberMap();
-  if (els.includeAnswerKey.checked) {
-    extras.push({
-      estimatedHeight: 64,
-      html: `<section class="final-extra final-answer-key"><b>Cevap Anahtarı:</b> ${printableQuestions
-        .map((question) => `${numberMap.get(question.id) || ""}-${question.answer || "-"}`)
-        .join("  ")}</section>`,
-    });
-  }
-  if (els.includeOptic.checked) {
-    extras.push({
-      estimatedHeight: Math.min(260, 46 + printableQuestions.length * 15),
-      html: `<section class="final-optic"><b>Optik Form</b>${printableQuestions
-        .map(
-          (question) =>
-            `<div><span>${numberMap.get(question.id) || ""}</span>${["A", "B", "C", "D", "E"].map((answer) => `<em>${answer}</em>`).join("")}</div>`,
-        )
-        .join("")}</section>`,
-    });
-  }
-
-  for (const extra of extras) {
-    let page = pages[pages.length - 1] || createPrintPage(layout, 0);
-    if (!pages.length) pages.push(page);
-    let used = Math.max(...page.columnHeights);
-    if (used > 0 && used + extra.estimatedHeight > page.maxHeight) {
-      page = createPrintPage(layout, pages.length);
-      pages.push(page);
-      used = 0;
-    }
-    page.sections.push({ type: "full", html: extra.html });
-    page.columnHeights = page.columnHeights.map(() => used + extra.estimatedHeight);
-  }
+function getPrintableQuestions(questions = state.questions) {
+  return questions.filter((q) => !q.asDescription && q.loaded !== false);
 }
 
-function getPrintableQuestions() {
-  return state.questions.filter((question) => !question.asDescription);
-}
-
-function renderPrintablePageSections(sections, columns, smartClass) {
-  if (!sections.length) return `<section class="final-questions columns-${columns}${smartClass}"></section>`;
-  return sections
-    .map((section) => {
-      if (section.type === "full") return section.html;
-      return `<section class="final-questions columns-${columns}${smartClass}">${section.columns
-        .map((column) => `<div class="final-column">${column.join("")}</div>`)
-        .join("")}</section>`;
-    })
-    .join("");
+function renderPrintablePageSections(sections, columns) {
+  return sections.map((s) => s.type === "full" ? s.html : `<section class="final-questions columns-${columns}">${s.columns.map((c) => `<div class="final-column">${c.join("")}</div>`).join("")}</section>`).join("");
 }
 
 function indexOfShortestColumn(values) {
-  let index = 0;
-  values.forEach((value, candidate) => {
-    if (value < values[index]) index = candidate;
-  });
-  return index;
+  return values.indexOf(Math.min(...values));
 }
 
 function updateDocumentPageSummary() {
-  const pages = Math.max(1, els.finalPaper.querySelectorAll(".paper-page").length);
-  if (els.docPageStatus) els.docPageStatus.innerHTML = `Sayfa: <b>1</b> / ${pages}`;
-  if (els.docInfoLine) els.docInfoLine.innerHTML = `Sayfa: ${pages} <span>Boyut: yaklaşık ${Math.max(1, pages * 215)} KB</span>`;
+  const pages = Array.from(els.finalPaper.querySelectorAll(".paper-page"));
+  if (!pages.length) return;
+  const rect = $(".doc-preview").getBoundingClientRect();
+  const midpoint = rect.top + Math.min(rect.height / 2, 200);
+  let current = 1;
+  pages.forEach((page, index) => { if (page.getBoundingClientRect().top <= midpoint) current = index + 1; });
+  els.docPageStatus.innerHTML = `Sayfa: <b>${current}</b> / ${pages.length}`;
+  els.docInfoLine.textContent = `${pages.length} sayfa · ${els.paperSize.value.toUpperCase()}`;
 }
 
 function setDocumentZoom(value, announce = true) {
-  state.docZoom = clamp(value, 0.65, 1.65);
-  els.finalPaper.style.setProperty("--doc-zoom", state.docZoom);
+  state.docZoom = clamp(value, 0.15, 2);
+  els.finalPaper.style.zoom = state.docZoom;
+  els.finalPaper.style.transform = "none";
   if (announce) showToast(`Önizleme %${Math.round(state.docZoom * 100)}`);
 }
 
+function fitDocumentZoom() {
+  setDocumentZoom(Math.min(1, ($(".doc-preview").clientWidth - 36) / getPaperLayoutMetrics().pageWidth), false);
+}
+
 function getDocumentExport() {
-  const title = (els.testTitle.value.trim() || els.docName.textContent || "sinav").trim();
-  const safeTitle = getSafeDocumentBaseName(title);
-  const filename = `${safeTitle || "hazirlanan-sinav"}.html`;
+  const title = getDocumentTitle();
+  const suffix = state.documentGroup ? `-${state.documentGroup}` : "";
+  const filename = `${getSafeDocumentBaseName(title) || "sinav"}${suffix}.html`;
   const html = `<!doctype html><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${getExportStyles()}</style>${els.finalPaper.outerHTML}`;
   return { filename, html, title };
 }
 
 async function downloadDocumentPdf() {
   try {
+    // Request the location while the original click still grants user activation.
+    let handle = null;
+    if (window.showSaveFilePicker) {
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: getDocumentExport().filename.replace(/\.html$/, ".pdf"),
+          types: [{ description: "PDF sınav dokümanı", accept: { "application/pdf": [".pdf"] } }],
+        });
+      } catch (error) {
+        if (error.name === "AbortError") throw error;
+        console.warn("Native save dialog unavailable", error);
+      }
+    }
+    setDocumentBusy(true);
     showToast("PDF hazırlanıyor");
     const { filename, pdfBytes } = await createDocumentPdfFile();
-    await saveFileAs(filename, "application/pdf", pdfBytes, {
-      description: "PDF sınav dokümanı",
-      accept: { "application/pdf": [".pdf"] },
-    });
+    if (handle) {
+      const writable = await handle.createWritable();
+      await writable.write(new Blob([pdfBytes], { type: "application/pdf" }));
+      await writable.close();
+      showToast("PDF kaydedildi");
+    } else { downloadFile(filename, "application/pdf", pdfBytes); showToast("PDF indirildi"); }
   } catch (error) {
-    console.error(error);
-    showToast("PDF oluşturulamadı");
-  }
+    if (error.name !== "AbortError") console.error(error);
+    showToast(error.name === "AbortError" ? "Kaydetme iptal edildi" : "PDF kaydedilemedi. Yeniden deneyin.");
+  } finally { setDocumentBusy(false); }
 }
 
 async function createDocumentPdfFile() {
-  const { title } = getDocumentExport();
-  const safeTitle = getSafeDocumentBaseName(title) || "hazirlanan-sinav";
-  const canvases = await renderFinalPaperToCanvases();
-  const pages = canvases.map((canvas) => ({
-    jpegBytes: dataUrlToBytes(canvas.toDataURL("image/jpeg", 0.94)),
-    widthPx: canvas.width,
-    heightPx: canvas.height,
-  }));
-  const pdfBytes = createImagePagesPdf(pages);
-  const filename = `${safeTitle}.pdf`;
-  const file = new File([pdfBytes], filename, { type: "application/pdf" });
-  return { filename, pdfBytes, file, title };
+  if (state.pdfExportPromise) return state.pdfExportPromise;
+  state.pdfExportPromise = (async () => {
+    if (!window.html2canvas || !window.jspdf) throw new Error("PDF araçları yüklenemedi");
+    const { title, filename: htmlName } = getDocumentExport();
+    const filename = htmlName.replace(/\.html$/, ".pdf");
+    const layout = getPaperLayoutMetrics();
+    const targets = Array.from(els.finalPaper.querySelectorAll(".paper-page"));
+    if (!targets.length) throw new Error("Önce kağıdı hazırlayın");
+    const pdf = new window.jspdf.jsPDF({ orientation: els.orientation.value, unit: "mm", format: [layout.widthMm, layout.heightMm], compress: true });
+    pdf.setProperties({ title, creator: "Key Test Hazırlayıcı" });
+    for (let i = 0; i < targets.length; i++) {
+      const canvas = await renderPaperElementToCanvas(targets[i]);
+      if (i) pdf.addPage([layout.widthMm, layout.heightMm], els.orientation.value);
+      pdf.addImage(canvas, "JPEG", 0, 0, layout.widthMm, layout.heightMm, undefined, "FAST");
+      canvas.width = canvas.height = 1;
+    }
+    const pdfBytes = new Uint8Array(pdf.output("arraybuffer"));
+    return { title, filename, pdfBytes, file: new File([pdfBytes], filename, { type: "application/pdf" }) };
+  })().catch((error) => { state.pdfExportPromise = null; throw error; });
+  return state.pdfExportPromise;
 }
 
 async function renderFinalPaperToCanvases() {
-  const pageElements = Array.from(els.finalPaper.querySelectorAll(".paper-page"));
-  const targets = pageElements.length ? pageElements : [els.finalPaper];
-  const canvases = [];
-  for (const target of targets) {
-    canvases.push(await renderPaperElementToCanvas(target));
-  }
-  return canvases;
+  const result = [];
+  for (const page of els.finalPaper.querySelectorAll(".paper-page")) result.push(await renderPaperElementToCanvas(page));
+  return result;
 }
 
 async function renderPaperElementToCanvas(paper) {
-  const width = Math.ceil(paper.offsetWidth || paper.scrollWidth);
-  const height = Math.ceil(paper.offsetHeight || paper.scrollHeight);
-  const scale = 2;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(width * scale);
-  canvas.height = Math.ceil(height * scale);
-  const ctx = canvas.getContext("2d");
-  ctx.scale(scale, scale);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, width, height);
-
-  await drawPaperDomToCanvas(ctx, paper);
-  return canvas;
-}
-
-async function drawPaperDomToCanvas(ctx, paper) {
-  const paperRect = paper.getBoundingClientRect();
-  const zoom = paperRect.width / Math.max(1, paper.offsetWidth);
-  const boxOf = (element) => {
-    const rect = element.getBoundingClientRect();
-    return {
-      x: (rect.left - paperRect.left) / zoom,
-      y: (rect.top - paperRect.top) / zoom,
-      width: rect.width / zoom,
-      height: rect.height / zoom,
-    };
-  };
-
-  const title = paper.querySelector(".final-title");
-  if (title) {
-    const box = boxOf(title);
-    ctx.strokeStyle = state.settings.accentColor;
-    ctx.lineWidth = 1;
-    roundRect(ctx, box.x, box.y, box.width, box.height, 8);
-    ctx.stroke();
-
-    const label = title.querySelector("span");
-    if (label) {
-      const labelBox = boxOf(label);
-      ctx.fillStyle = state.settings.accentColor;
-      roundRect(ctx, labelBox.x, labelBox.y, labelBox.width, labelBox.height, labelBox.height / 2);
-      ctx.fill();
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "700 12px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label.textContent.trim(), labelBox.x + labelBox.width / 2, labelBox.y + labelBox.height / 2);
-    }
-  }
-
-  const meta = paper.querySelector(".final-meta");
-  if (meta) {
-    const box = boxOf(meta);
-    ctx.fillStyle = "#f8fafc";
-    roundRect(ctx, box.x, box.y, box.width, box.height, 8);
-    ctx.fill();
-    ctx.strokeStyle = "#dbe4ef";
-    ctx.stroke();
-    ctx.fillStyle = "#334155";
-    ctx.font = "10px Arial";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    drawWrappedCanvasText(ctx, meta.textContent.trim(), box.x + 10, box.y + 8, box.width - 20, 14);
-  }
-
-  for (const sectionTitle of paper.querySelectorAll(".final-section-title")) {
-    const box = boxOf(sectionTitle);
-    ctx.strokeStyle = "#111827";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(box.x, box.y, box.width, box.height);
-    ctx.fillStyle = "#111827";
-    ctx.font = "700 11px Arial";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText(sectionTitle.textContent.trim(), box.x + 6, box.y + box.height / 2);
-  }
-
-  for (const article of paper.querySelectorAll(".final-question")) {
-    const box = boxOf(article);
-    if (article.classList.contains("description")) {
-      ctx.fillStyle = "#f8fafc";
-      roundRect(ctx, box.x, box.y, box.width, box.height, 6);
-      ctx.fill();
-      ctx.strokeStyle = "#a7b6c8";
-      ctx.stroke();
-    }
-
-    const number = article.querySelector("b");
-    if (number) {
-      const numberBox = boxOf(number);
-      ctx.fillStyle = "#111827";
-      ctx.font = article.classList.contains("expanded") ? "700 14px Arial" : "700 9px Arial";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      ctx.fillText(number.textContent.trim(), numberBox.x, numberBox.y);
-    }
-
-    const image = article.querySelector("img");
-    if (image) {
-      const imageBox = boxOf(image);
-      const loadedImage = await loadImageFromSrc(image.currentSrc || image.src);
-      ctx.drawImage(loadedImage, imageBox.x, imageBox.y, imageBox.width, imageBox.height);
-    } else {
-      const textSource = article.querySelector("div") || article;
-      const textBox = boxOf(textSource);
-      ctx.fillStyle = "#111827";
-      ctx.font = article.classList.contains("expanded") ? "14px Arial" : "9px Arial";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      drawWrappedCanvasText(ctx, textSource.textContent.trim(), textBox.x, textBox.y, textBox.width, 13);
-    }
-  }
-
-  const answerKey = Array.from(paper.querySelectorAll("section")).find((section) => section.textContent.includes("Cevap Anahtarı"));
-  if (answerKey) {
-    const box = boxOf(answerKey);
-    ctx.strokeStyle = "#111827";
-    ctx.beginPath();
-    ctx.moveTo(box.x, box.y);
-    ctx.lineTo(box.x + box.width, box.y);
-    ctx.stroke();
-    ctx.fillStyle = "#111827";
-    ctx.font = "10px Arial";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    drawWrappedCanvasText(ctx, answerKey.textContent.trim(), box.x, box.y + 8, box.width, 14);
-  }
-
-  const optic = paper.querySelector(".final-optic");
-  if (optic) {
-    const box = boxOf(optic);
-    ctx.strokeStyle = "#c9d6e3";
-    roundRect(ctx, box.x, box.y, box.width, box.height, 8);
-    ctx.stroke();
-    ctx.fillStyle = "#111827";
-    ctx.font = "9px Arial";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    drawWrappedCanvasText(ctx, optic.textContent.trim(), box.x + 10, box.y + 10, box.width - 20, 12);
-  }
-
-  const footer = paper.querySelector("footer");
-  if (footer) {
-    const box = boxOf(footer);
-    ctx.strokeStyle = state.settings.accentColor;
-    ctx.beginPath();
-    ctx.moveTo(box.x, box.y);
-    ctx.lineTo(box.x + box.width, box.y);
-    ctx.moveTo(box.x, box.y + box.height);
-    ctx.lineTo(box.x + box.width, box.y + box.height);
-    ctx.stroke();
-    ctx.fillStyle = "#ffffff";
-    ctx.beginPath();
-    ctx.arc(box.x + box.width / 2, box.y + box.height / 2, 11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = state.settings.accentColor;
-    ctx.font = "11px Arial";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText((footer.querySelector("span")?.textContent || footer.textContent || "1").trim(), box.x + box.width / 2, box.y + box.height / 2);
-  }
-}
-
-function roundRect(ctx, x, y, width, height, radius) {
-  const safeRadius = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + safeRadius, y);
-  ctx.lineTo(x + width - safeRadius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
-  ctx.lineTo(x + width, y + height - safeRadius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
-  ctx.lineTo(x + safeRadius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
-  ctx.lineTo(x, y + safeRadius);
-  ctx.quadraticCurveTo(x, y, x + safeRadius, y);
-  ctx.closePath();
+  await Promise.all(Array.from(paper.querySelectorAll("img"), (img) => img.decode()));
+  return html2canvas(paper, {
+    scale: 2, backgroundColor: "#ffffff", logging: false, width: paper.offsetWidth, height: paper.offsetHeight,
+    windowWidth: Math.max(1280, window.innerWidth), windowHeight: Math.max(1200, paper.offsetHeight),
+    onclone: (doc) => {
+      const finalPaper = doc.getElementById("finalPaper");
+      finalPaper.style.transform = "none";
+      finalPaper.style.zoom = "1";
+      doc.querySelectorAll(".doc-preview,.doc-body,.document-modal").forEach((el) => { el.style.overflow = "visible"; el.scrollTop = el.scrollLeft = 0; });
+      doc.querySelectorAll(".paper-page").forEach((el) => { el.style.boxShadow = "none"; });
+    },
+  });
 }
 
 function loadImageFromSrc(src) {
@@ -2021,96 +2059,6 @@ function loadImageFromSrc(src) {
   });
 }
 
-function drawWrappedCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
-  const words = text.split(/\s+/).filter(Boolean);
-  let line = "";
-  let cursorY = y;
-  words.forEach((word) => {
-    const candidate = line ? `${line} ${word}` : word;
-    if (ctx.measureText(candidate).width > maxWidth && line) {
-      ctx.fillText(line, x, cursorY);
-      line = word;
-      cursorY += lineHeight;
-    } else {
-      line = candidate;
-    }
-  });
-  if (line) ctx.fillText(line, x, cursorY);
-}
-
-function createImagePagesPdf(pages) {
-  const encoder = new TextEncoder();
-  const parts = [encoder.encode("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n")];
-  const offsets = [0];
-  let length = parts[0].length;
-
-  const addPart = (part) => {
-    const bytes = typeof part === "string" ? encoder.encode(part) : part;
-    parts.push(bytes);
-    length += bytes.length;
-  };
-  const addObject = (number, body) => {
-    offsets[number] = length;
-    addPart(`${number} 0 obj\n`);
-    if (Array.isArray(body)) body.forEach(addPart);
-    else addPart(body);
-    addPart("\nendobj\n");
-  };
-
-  addObject(1, "<< /Type /Catalog /Pages 2 0 R >>");
-  const pageObjectNumbers = pages.map((_, index) => 3 + index * 3);
-  addObject(2, `<< /Type /Pages /Kids [${pageObjectNumbers.map((number) => `${number} 0 R`).join(" ")}] /Count ${pages.length} >>`);
-
-  pages.forEach((page, index) => {
-    const pageObject = 3 + index * 3;
-    const imageObject = pageObject + 1;
-    const contentObject = pageObject + 2;
-    const imageName = `Im${index}`;
-    const pageWidth = page.widthPx * 0.75;
-    const pageHeight = page.heightPx * 0.75;
-    const content = `q\n${pageWidth.toFixed(2)} 0 0 ${pageHeight.toFixed(2)} 0 0 cm\n/${imageName} Do\nQ`;
-
-    addObject(
-      pageObject,
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /${imageName} ${imageObject} 0 R >> >> /Contents ${contentObject} 0 R >>`,
-    );
-    addObject(imageObject, [
-      `<< /Type /XObject /Subtype /Image /Width ${page.widthPx} /Height ${page.heightPx} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${page.jpegBytes.length} >>\nstream\n`,
-      page.jpegBytes,
-      "\nendstream",
-    ]);
-    addObject(contentObject, `<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`);
-  });
-
-  const xrefOffset = length;
-  const objectCount = 2 + pages.length * 3;
-  addPart(`xref\n0 ${objectCount + 1}\n0000000000 65535 f \n${offsets
-    .slice(1)
-    .map((offset) => `${String(offset).padStart(10, "0")} 00000 n `)
-    .join("\n")}\ntrailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
-
-  const pdf = new Uint8Array(length);
-  let cursor = 0;
-  parts.forEach((part) => {
-    pdf.set(part, cursor);
-    cursor += part.length;
-  });
-  return pdf;
-}
-
-function createSingleImagePdf(jpegBytes, widthPx, heightPx) {
-  return createImagePagesPdf([{ jpegBytes, widthPx, heightPx }]);
-}
-
-function dataUrlToBytes(dataUrl) {
-  const base64 = dataUrl.split(",")[1] || "";
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
 
 function getSafeDocumentBaseName(title) {
   return title
@@ -2237,8 +2185,11 @@ function saveLocalDraft() {
     sections: state.sections,
     questions: state.questions,
   };
-  localStorage.setItem(storageKey, JSON.stringify(payload));
-  showToast("Taslak kaydedildi");
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(payload));
+  } catch (error) {
+    console.warn("Local draft storage unavailable", error);
+  }
 }
 
 async function importQuestionPackage(event) {
@@ -2274,7 +2225,14 @@ function applyDraft(draft) {
   state.sections = Array.isArray(draft.sections)
     ? draft.sections
     : [{ id: "default-section", start: 0, title: "", resetNumbering: false, newPage: false }];
-  state.settings = { ...state.settings, ...(draft.settings || {}) };
+  const settings = draft.settings || {};
+  state.settings = {
+    ...state.settings, ...settings,
+    margins: { ...state.settings.margins, ...settings.margins },
+    watermark: { ...state.settings.watermark, ...settings.watermark },
+    printOptions: { ...state.settings.printOptions, ...settings.printOptions },
+  };
+  state.questions.forEach((question) => { question.loaded = true; });
   normalizeWorkspaceState();
   fillFields(draft.fields || {});
   els.questionGapToggle.checked = state.settings.globalGap > 0 || els.questionGapToggle.checked;
@@ -2291,6 +2249,8 @@ function collectFields() {
     testTitle: els.testTitle.value,
     schoolName: els.schoolName.value,
     writtenType: els.writtenType.value,
+    customExamTitle: els.customExamTitle.value,
+    teacherName: els.teacherName.value,
     descriptionField: els.descriptionField.value,
     className: els.className.value,
     groupName: els.groupName.value,
@@ -2330,6 +2290,7 @@ function closeModal(modal) {
   if (!modal) return;
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
+  if (modal === els.watermarkModal) els.watermarkToggle.checked = state.settings.watermark.enabled;
 }
 
 function findQuestion(id) {
