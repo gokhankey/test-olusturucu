@@ -15,10 +15,14 @@ const state = {
   cropZoom: "fit",
   cropTrim: true,
   cropMode: "select",
+  eraserSize: 28,
+  eraseStrokes: [],
+  eraseGesture: null,
   cropRenderVersion: 0,
   cropRendering: false,
   documentVariants: [],
   documentGroup: "",
+  draggedQuestionId: null,
   gapTarget: "global",
   gapQuestionId: null,
   splitQuestionId: null,
@@ -105,6 +109,11 @@ const els = {
   pdfCanvas: $("#pdfCanvas"),
   pdfOverlayLayer: $("#pdfOverlayLayer"),
   selectionBox: $("#selectionBox"),
+  eraserPreview: $("#eraserPreview"),
+  eraserControls: $("#eraserControls"),
+  eraserSize: $("#eraserSize"),
+  undoEraseBtn: $("#undoEraseBtn"),
+  clearEraseBtn: $("#clearEraseBtn"),
   selectionConfirm: $("#selectionConfirm"),
   confirmCropBtn: $("#confirmCropBtn"),
   prevPdfPageBtn: $("#prevPdfPageBtn"),
@@ -218,6 +227,7 @@ function bindEvents() {
   els.modeTabs.forEach((button) => {
     button.addEventListener("click", () => {
       state.examKind = button.dataset.examKind;
+      showBasicPanel();
       applyExamMode();
     });
   });
@@ -291,16 +301,16 @@ function bindEvents() {
     }
   });
   $("#cancelCropBtn").addEventListener("click", clearSelection);
-  $$("[data-crop-mode]").forEach((button) => button.addEventListener("click", () => {
-    state.cropMode = button.dataset.cropMode;
-    clearSelection();
-    els.pdfCanvasWrap.classList.toggle("pan-mode", state.cropMode === "pan");
-    $$("[data-crop-mode]").forEach((item) => {
-      const active = item.dataset.cropMode === state.cropMode;
-      item.classList.toggle("active", active);
-      item.setAttribute("aria-pressed", String(active));
-    });
-  }));
+  $$("[data-crop-mode]").forEach((button) => button.addEventListener("click", () => setCropMode(button.dataset.cropMode)));
+  els.eraserSize.addEventListener("input", () => { state.eraserSize = Number(els.eraserSize.value); });
+  els.undoEraseBtn.addEventListener("click", () => {
+    state.eraseStrokes.pop();
+    renderEraserPreview();
+  });
+  els.clearEraseBtn.addEventListener("click", () => {
+    state.eraseStrokes = [];
+    renderEraserPreview();
+  });
   els.confirmCropBtn.addEventListener("click", confirmPdfCrop);
   $$(".answer-picks button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -445,14 +455,17 @@ function bindEvents() {
   });
   $(".doc-preview").addEventListener("scroll", updateDocumentPageSummary);
 
-  els.questionGrid.addEventListener("dragover", (event) => event.preventDefault());
-  els.questionGrid.addEventListener("drop", handleDrop);
+  els.questionGrid.addEventListener("dragstart", handleQuestionDragStart);
+  els.questionGrid.addEventListener("dragover", handleQuestionDragOver);
+  els.questionGrid.addEventListener("drop", handleQuestionDrop);
+  els.questionGrid.addEventListener("dragend", clearQuestionDragState);
   $(".work-area").addEventListener("dragover", (event) => event.preventDefault());
   $(".work-area").addEventListener("drop", handleDrop);
 }
 
 function applyExamMode() {
-  els.modeTabs.forEach((button) => button.classList.toggle("active", button.dataset.examKind === state.examKind));
+  const basicPanelVisible = els.advancedPanel.classList.contains("hidden");
+  els.modeTabs.forEach((button) => button.classList.toggle("active", basicPanelVisible && button.dataset.examKind === state.examKind));
   const isWritten = state.examKind === "written";
   const isSheet = state.examKind === "sheet";
 
@@ -469,11 +482,17 @@ function applyExamMode() {
 function showAdvancedPanel() {
   els.basicPanel.classList.add("hidden");
   els.advancedPanel.classList.remove("hidden");
+  els.advancedToggleBtn.classList.add("active");
+  els.advancedToggleBtn.setAttribute("aria-pressed", "true");
+  els.modeTabs.forEach((button) => button.classList.remove("active"));
 }
 
 function showBasicPanel() {
   els.advancedPanel.classList.add("hidden");
   els.basicPanel.classList.remove("hidden");
+  els.advancedToggleBtn.classList.remove("active");
+  els.advancedToggleBtn.setAttribute("aria-pressed", "false");
+  els.modeTabs.forEach((button) => button.classList.toggle("active", button.dataset.examKind === state.examKind));
 }
 
 async function handleMediaFiles(event) {
@@ -671,12 +690,50 @@ function renderPdfOverlays() {
   refreshIcons();
 }
 
+function setCropMode(mode) {
+  if (mode === "erase" && !normalizedSelection()) {
+    showToast("Önce silmek istediğin alanı seç");
+    return;
+  }
+  if (mode === "pan") clearSelection(false);
+  state.cropMode = mode;
+  updateCropModeUi();
+  if (mode === "erase") renderEraserPreview();
+}
+
+function updateCropModeUi() {
+  els.pdfCanvasWrap.classList.toggle("pan-mode", state.cropMode === "pan");
+  els.pdfCanvasWrap.classList.toggle("erase-mode", state.cropMode === "erase");
+  els.eraserControls.classList.toggle("hidden", state.cropMode !== "erase");
+  els.eraserSize.value = String(state.eraserSize);
+  $$("[data-crop-mode]").forEach((item) => {
+    const active = item.dataset.cropMode === state.cropMode;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-pressed", String(active));
+  });
+}
+
 function startPdfSelection(event) {
   if (!getCurrentPdf() || state.cropRendering || event.target.closest("button") || event.button !== 0) return;
   event.preventDefault();
   if (state.cropMode === "pan") {
     state.panGesture = { x: event.clientX, y: event.clientY, left: els.pdfViewer.scrollLeft, top: els.pdfViewer.scrollTop, pointerId: event.pointerId };
     els.pdfCanvasWrap.setPointerCapture(event.pointerId);
+    return;
+  }
+  if (state.cropMode === "erase") {
+    const box = normalizedSelection();
+    if (!box || !event.target.closest("#selectionBox")) return;
+    const point = clientToCanvasPoint(event);
+    const displayBox = canvasToDisplayBox(box);
+    const stroke = {
+      size: state.eraserSize / Math.max(1, displayBox.width),
+      points: [canvasPointToSelectionPoint(point, box)],
+    };
+    state.eraseStrokes.push(stroke);
+    state.eraseGesture = { stroke, pointerId: event.pointerId };
+    els.pdfCanvasWrap.setPointerCapture(event.pointerId);
+    renderEraserPreview();
     return;
   }
   const point = clientToCanvasPoint(event);
@@ -686,16 +743,30 @@ function startPdfSelection(event) {
   els.pdfCanvasWrap.setPointerCapture(event.pointerId);
   state.isSelecting = true;
   els.selectionConfirm.classList.add("hidden");
-  if (state.cropGesture.mode === "new") state.selection = {
-    startX: point.x,
-    startY: point.y,
-    endX: point.x,
-    endY: point.y,
-  };
+  if (state.cropGesture.mode === "new") {
+    state.eraseStrokes = [];
+    state.selection = {
+      startX: point.x,
+      startY: point.y,
+      endX: point.x,
+      endY: point.y,
+    };
+  }
   drawSelection();
 }
 
 function movePdfSelection(event) {
+  if (state.eraseGesture) {
+    if (event.pointerId !== state.eraseGesture.pointerId) return;
+    const box = normalizedSelection();
+    if (!box) return;
+    const point = canvasPointToSelectionPoint(clientToCanvasPoint(event), box);
+    const points = state.eraseGesture.stroke.points;
+    const last = points[points.length - 1];
+    if (!last || Math.hypot(point.x - last.x, point.y - last.y) > 0.002) points.push(point);
+    renderEraserPreview();
+    return;
+  }
   if (state.panGesture) {
     const pan = state.panGesture;
     if (event.pointerId === pan.pointerId) {
@@ -727,7 +798,14 @@ function movePdfSelection(event) {
   drawSelection();
 }
 
-function finishPdfSelection() {
+function finishPdfSelection(event) {
+  if (state.eraseGesture) {
+    if (event?.pointerId != null && event.pointerId !== state.eraseGesture.pointerId) return;
+    if (els.pdfCanvasWrap.hasPointerCapture(state.eraseGesture.pointerId)) els.pdfCanvasWrap.releasePointerCapture(state.eraseGesture.pointerId);
+    state.eraseGesture = null;
+    renderEraserPreview();
+    return;
+  }
   if (state.panGesture) {
     if (els.pdfCanvasWrap.hasPointerCapture(state.panGesture.pointerId)) els.pdfCanvasWrap.releasePointerCapture(state.panGesture.pointerId);
     state.panGesture = null;
@@ -755,6 +833,59 @@ function drawSelection() {
     height: `${displayBox.height}px`,
   });
   els.selectionBox.classList.remove("hidden");
+  renderEraserPreview();
+}
+
+function canvasPointToSelectionPoint(point, box) {
+  return {
+    x: clamp((point.x - box.x) / Math.max(1, box.width), 0, 1),
+    y: clamp((point.y - box.y) / Math.max(1, box.height), 0, 1),
+  };
+}
+
+function renderEraserPreview() {
+  const box = normalizedSelection();
+  if (!box || els.selectionBox.classList.contains("hidden")) {
+    els.eraserPreview.width = 1;
+    els.eraserPreview.height = 1;
+    return;
+  }
+  const displayBox = canvasToDisplayBox(box);
+  const ratio = Math.min(2, window.devicePixelRatio || 1);
+  const width = Math.max(1, Math.round(displayBox.width * ratio));
+  const height = Math.max(1, Math.round(displayBox.height * ratio));
+  if (els.eraserPreview.width !== width || els.eraserPreview.height !== height) {
+    els.eraserPreview.width = width;
+    els.eraserPreview.height = height;
+  }
+  const context = els.eraserPreview.getContext("2d");
+  context.clearRect(0, 0, width, height);
+  drawErasureStrokes(context, state.eraseStrokes, width, height);
+}
+
+function drawErasureStrokes(context, strokes, width, height) {
+  context.save();
+  context.strokeStyle = "#fff";
+  context.fillStyle = "#fff";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  strokes.forEach((stroke) => {
+    const points = Array.isArray(stroke.points) ? stroke.points : [];
+    if (!points.length) return;
+    const lineWidth = Math.max(1, Number(stroke.size || 0.05) * width);
+    context.lineWidth = lineWidth;
+    if (points.length === 1) {
+      context.beginPath();
+      context.arc(points[0].x * width, points[0].y * height, lineWidth / 2, 0, Math.PI * 2);
+      context.fill();
+      return;
+    }
+    context.beginPath();
+    context.moveTo(points[0].x * width, points[0].y * height);
+    points.slice(1).forEach((point) => context.lineTo(point.x * width, point.y * height));
+    context.stroke();
+  });
+  context.restore();
 }
 
 function positionSelectionConfirm(box) {
@@ -811,6 +942,7 @@ function confirmPdfCrop() {
   if (!pdf || !box) return;
 
   const crop = cropCanvas(els.pdfCanvas, box);
+  applyErasureStrokes(crop, state.eraseStrokes);
   const trimmed = state.cropTrim ? trimCanvas(crop) : crop;
   const existing = findQuestion(state.editingCropId);
   const question = {
@@ -827,11 +959,13 @@ function confirmPdfCrop() {
     pdfId: pdf.id,
     page: pdf.page,
     box: canvasToRelativeBox(box),
+    erasureStrokes: structuredClone(state.eraseStrokes),
     createdAt: new Date().toISOString(),
     ...existing,
     src: trimmed.toDataURL("image/png"),
     answer: state.selectedAnswer || "",
     box: canvasToRelativeBox(box),
+    erasureStrokes: structuredClone(state.eraseStrokes),
   };
   if (existing) Object.assign(existing, question);
   else state.questions.push(question);
@@ -844,11 +978,13 @@ function confirmPdfCrop() {
 function editPdfCrop(id) {
   const question = findQuestion(id);
   if (!question || state.cropRendering) return;
-  if (state.cropMode === "pan") $("[data-crop-mode='select']").click();
+  state.cropMode = "select";
+  updateCropModeUi();
   state.editingCropId = id;
   const box = relativeToCanvasBox(question.box);
   state.selection = { startX: box.x, startY: box.y, endX: box.x + box.width, endY: box.y + box.height };
   state.cropGesture = null;
+  state.eraseStrokes = structuredClone(question.erasureStrokes || []);
   state.selectedAnswer = question.answer || "";
   renderPdfOverlays();
   drawSelection();
@@ -861,6 +997,12 @@ function cropCanvas(canvas, box) {
   output.height = Math.max(1, Math.floor(box.height));
   output.getContext("2d").drawImage(canvas, box.x, box.y, box.width, box.height, 0, 0, output.width, output.height);
   return output;
+}
+
+function applyErasureStrokes(canvas, strokes) {
+  if (!Array.isArray(strokes) || !strokes.length) return canvas;
+  drawErasureStrokes(canvas.getContext("2d"), strokes, canvas.width, canvas.height);
+  return canvas;
 }
 
 function trimCanvas(canvas) {
@@ -902,17 +1044,21 @@ function trimCanvas(canvas) {
   return trimmed;
 }
 
-function clearSelection() {
-  const pointerId = state.panGesture?.pointerId ?? state.cropGesture?.pointerId;
+function clearSelection(resetMode = true) {
+  const pointerId = state.panGesture?.pointerId ?? state.cropGesture?.pointerId ?? state.eraseGesture?.pointerId;
   if (pointerId != null && els.pdfCanvasWrap.hasPointerCapture(pointerId)) els.pdfCanvasWrap.releasePointerCapture(pointerId);
   state.panGesture = null;
   state.selection = null;
+  state.eraseStrokes = [];
+  state.eraseGesture = null;
   state.isSelecting = false;
   const wasEditing = state.editingCropId;
   state.editingCropId = null;
   state.cropGesture = null;
   els.selectionBox.classList.add("hidden");
   els.selectionConfirm.classList.add("hidden");
+  if (resetMode && state.cropMode === "erase") state.cropMode = "select";
+  updateCropModeUi();
   if (wasEditing) renderPdfOverlays();
 }
 
@@ -991,6 +1137,7 @@ function normalizeWorkspaceState() {
   state.questions.forEach((question) => {
     if (question.customGap == null) question.customGap = false;
     if (question.answer == null) question.answer = "";
+    if (!Array.isArray(question.erasureStrokes)) question.erasureStrokes = [];
   });
   ensureSections();
 }
@@ -1149,8 +1296,10 @@ function renderQuestionCard(question, index, numberMap = getQuestionNumberMap())
     question.kind === "manual"
       ? `<div class="manual-question-thumb">${question.html}</div>`
       : `<img class="question-thumb" src="${question.src}" alt="${number}. soru" />`;
+  const canMovePrevious = index > 0;
+  const canMoveNext = index < state.questions.length - 1;
   return `
-    <article class="question-card ${question.expanded ? "wide-print" : ""} ${question.asDescription ? "is-description" : ""}" data-id="${question.id}" data-index="${index}" style="--question-gap:${getQuestionGap(question)}mm">
+    <article class="question-card ${question.expanded ? "wide-print" : ""} ${question.asDescription ? "is-description" : ""}" data-id="${question.id}" data-index="${index}" draggable="true" aria-label="${escapeHtml(number ? `${number}. soru` : "Açıklama")}" style="--question-gap:${getQuestionGap(question)}mm">
       <div class="card-tools">
         <button type="button" data-card-action="split" title="Testi bu sorudan itibaren ayır"><i data-lucide="separator-horizontal"></i></button>
         <button type="button" class="${question.expanded ? "active" : ""}" data-card-action="expand" title="${question.expanded ? "Kağıtta geniş basılacak" : "Soruyu Genişlet"}"><i data-lucide="move-horizontal"></i></button>
@@ -1158,6 +1307,8 @@ function renderQuestionCard(question, index, numberMap = getQuestionNumberMap())
         <button type="button" class="gap-tool ${question.customGap ? "active" : ""}" data-card-action="gap" title="Soru altına boşluk ekle"><i data-lucide="chevron-up"></i><i data-lucide="chevron-down"></i></button>
       </div>
       <div class="card-top-tools">
+        <button type="button" data-card-action="move-previous" title="Önceki sıraya taşı" aria-label="Önceki sıraya taşı" ${canMovePrevious ? "" : "disabled"}><i data-lucide="arrow-left"></i></button>
+        <button type="button" data-card-action="move-next" title="Sonraki sıraya taşı" aria-label="Sonraki sıraya taşı" ${canMoveNext ? "" : "disabled"}><i data-lucide="arrow-right"></i></button>
         <button type="button" data-card-action="preview" title="Önizle"><i data-lucide="search"></i></button>
         <button type="button" data-card-action="delete" title="Sil"><i data-lucide="x"></i></button>
       </div>
@@ -1179,6 +1330,8 @@ function handleCardAction(button) {
   const action = button.dataset.cardAction;
   if (action === "delete") removeQuestion(question.id);
   if (action === "preview") previewQuestion(question);
+  if (action === "move-previous") moveQuestionRelative(question.id, -1);
+  if (action === "move-next") moveQuestionRelative(question.id, 1);
   if (action === "expand") {
     question.expanded = !question.expanded;
     renderQuestionGrid();
@@ -1194,6 +1347,94 @@ function handleCardAction(button) {
   }
   if (action === "gap") openGapModal("question", question.id, index + 1);
   if (action === "split") openSplitModal(question.id, index);
+}
+
+function moveQuestionRelative(id, direction) {
+  const sourceIndex = state.questions.findIndex((question) => question.id === id);
+  const target = state.questions[sourceIndex + direction];
+  if (sourceIndex < 0 || !target) return;
+  reorderQuestion(id, target.id, direction > 0);
+}
+
+function reorderQuestion(sourceId, targetId, placeAfter = false) {
+  if (!sourceId || !targetId || sourceId === targetId) return false;
+  ensureSections();
+  const questionById = new Map(state.questions.map((question) => [question.id, question]));
+  const blocks = getQuestionSections().map(({ section, questions }) => ({
+    section: { ...section },
+    ids: questions.map((question) => question.id),
+  }));
+  const sourceBlock = blocks.find((block) => block.ids.includes(sourceId));
+  const targetBlock = blocks.find((block) => block.ids.includes(targetId));
+  if (!sourceBlock || !targetBlock) return false;
+
+  sourceBlock.ids.splice(sourceBlock.ids.indexOf(sourceId), 1);
+  const targetIndex = targetBlock.ids.indexOf(targetId);
+  targetBlock.ids.splice(targetIndex + (placeAfter ? 1 : 0), 0, sourceId);
+
+  const populated = blocks.filter((block) => block.ids.length);
+  let start = 0;
+  populated.forEach((block) => {
+    block.section.start = start;
+    start += block.ids.length;
+  });
+  state.questions = populated.flatMap((block) => block.ids.map((id) => questionById.get(id)).filter(Boolean));
+  state.sections = populated.map((block) => block.section);
+  ensureSections();
+  renderQuestionGrid();
+  showToast("Soru yeni sırasına taşındı");
+  return true;
+}
+
+function handleQuestionDragStart(event) {
+  const card = event.target.closest(".question-card");
+  if (!card || event.target.closest("button,input,select,textarea")) {
+    event.preventDefault();
+    return;
+  }
+  state.draggedQuestionId = card.dataset.id;
+  card.classList.add("is-dragging");
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/question-id", card.dataset.id);
+}
+
+function handleQuestionDragOver(event) {
+  event.preventDefault();
+  if (!state.draggedQuestionId) return;
+  const card = event.target.closest(".question-card");
+  if (!card || card.dataset.id === state.draggedQuestionId) return;
+  event.stopPropagation();
+  els.questionGrid.querySelectorAll(".drop-before,.drop-after").forEach((item) => item.classList.remove("drop-before", "drop-after"));
+  const rect = card.getBoundingClientRect();
+  const placeAfter = Math.abs(event.clientY - (rect.top + rect.height / 2)) > rect.height * 0.28
+    ? event.clientY > rect.top + rect.height / 2
+    : event.clientX > rect.left + rect.width / 2;
+  card.classList.add(placeAfter ? "drop-after" : "drop-before");
+  card.dataset.dropAfter = String(placeAfter);
+  event.dataTransfer.dropEffect = "move";
+}
+
+function handleQuestionDrop(event) {
+  if (!state.draggedQuestionId) {
+    handleDrop(event);
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const sourceId = state.draggedQuestionId;
+  const card = event.target.closest(".question-card");
+  const targetId = card?.dataset.id;
+  const placeAfter = card?.dataset.dropAfter === "true";
+  clearQuestionDragState();
+  if (targetId) reorderQuestion(sourceId, targetId, placeAfter);
+}
+
+function clearQuestionDragState() {
+  state.draggedQuestionId = null;
+  els.questionGrid.querySelectorAll(".is-dragging,.drop-before,.drop-after").forEach((item) => {
+    item.classList.remove("is-dragging", "drop-before", "drop-after");
+    delete item.dataset.dropAfter;
+  });
 }
 
 function previewQuestion(question) {
@@ -1848,15 +2089,16 @@ async function buildPrintableQuestionItems(layout, measureHtml) {
       const width = q.expanded ? layout.contentWidth : layout.columnWidth;
       const gap = getQuestionGap(q);
       const gapCss = q.customGap || state.settings.globalGap > 0 ? `${gap}mm` : "12px";
+      const printWidth = q.expanded ? "100%" : "82%";
       const numberHtml = q.asDescription ? "" : `<b class="printed-question-number">${escapeHtml(number)}.</b>`;
       const content = q.kind === "manual" ? `<div class="printed-content">${q.html}</div>` : `<img src="${q.src}" alt="${escapeHtml(number)}. soru" />`;
-      let html = `<article class="final-question ${q.expanded ? "expanded" : ""} ${q.asDescription ? "description" : ""}" data-question-id="${q.id}" style="--question-gap:${gapCss}">${numberHtml}${content}</article>`;
+      let html = `<article class="final-question ${q.expanded ? "expanded" : ""} ${q.asDescription ? "description" : ""}" data-question-id="${q.id}" style="--question-gap:${gapCss};--question-print-width:${printWidth}">${numberHtml}${content}</article>`;
       let result = await measureHtml(html, width);
       // Fit only a source that is taller than a complete page.
       if (result.height > layout.nextPageHeight) {
         const available = Math.max(40, layout.nextPageHeight - gap * layout.pxPerMm - 40);
         const img = result.element.querySelector(":scope > img");
-        if (img) img.style.cssText = `width:auto;max-width:100%;height:auto;max-height:${available}px;object-fit:contain`;
+        if (img) img.style.cssText = `width:auto;max-width:var(--question-print-width,100%);height:auto;max-height:${available}px;margin-inline:auto;object-fit:contain`;
         else {
           const contentNode = result.element.querySelector(".printed-content");
           const canvas = await html2canvas(contentNode, { scale: 1.5, logging: false, backgroundColor: "#ffffff" });

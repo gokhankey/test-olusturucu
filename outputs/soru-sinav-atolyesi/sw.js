@@ -1,4 +1,4 @@
-const CACHE_NAME = "key-test-hazirlayici-20260914";
+const CACHE_NAME = "key-test-hazirlayici-20260923-1";
 const LOCAL_ASSETS = [
   "./",
   "./index.html",

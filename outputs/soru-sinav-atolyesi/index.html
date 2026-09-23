@@ -10,7 +10,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icon.svg" />
-    <link rel="stylesheet" href="./styles.css?v=20260914" />
+    <link rel="stylesheet" href="./styles.css?v=20260923-1" />
   </head>
   <body>
     <div class="app-shell">
@@ -50,7 +50,7 @@
             <button class="mode-tab active" type="button" data-exam-kind="written">Yazılı Kağıdı</button>
             <button class="mode-tab" type="button" data-exam-kind="sheet">Yaprak Test</button>
             <button class="mode-tab" type="button" data-exam-kind="trial">Deneme Sınavı</button>
-            <button id="advancedToggleBtn" class="mini-icon" type="button" title="Gelişmiş Ayarlar">
+            <button id="advancedToggleBtn" class="mini-icon" type="button" title="Gelişmiş Ayarlar" aria-label="Gelişmiş Ayarlar" aria-pressed="false">
               <i data-lucide="settings"></i>
             </button>
             <button id="quickSaveBtn" class="mini-icon" type="button" title="Kaydet">
@@ -232,6 +232,7 @@
           <div class="crop-modes" aria-label="Kırpma modu">
             <button type="button" data-crop-mode="select" class="active" aria-pressed="true" title="Alan seç"><i data-lucide="scan"></i></button>
             <button type="button" data-crop-mode="pan" aria-pressed="false" title="Belgeyi kaydır"><i data-lucide="hand"></i></button>
+            <button type="button" data-crop-mode="erase" aria-pressed="false" title="Seçili alanda silgi kullan"><i data-lucide="eraser"></i></button>
           </div>
           <select id="pdfSelect"></select>
           <label class="pdf-add" title="PDF ekle">
@@ -241,10 +242,17 @@
           <button id="closePdfBtn" class="close-button" type="button" title="Kapat"><i data-lucide="x"></i></button>
         </header>
         <div id="pdfViewer" class="pdf-viewer">
+          <div id="eraserControls" class="eraser-controls hidden" aria-label="Silgi ayarları">
+            <i data-lucide="eraser"></i>
+            <label>Boyut <input id="eraserSize" type="range" min="8" max="72" step="2" value="28" /></label>
+            <button id="undoEraseBtn" type="button" title="Son silmeyi geri al" aria-label="Son silmeyi geri al"><i data-lucide="undo-2"></i></button>
+            <button id="clearEraseBtn" type="button" title="Tüm silmeleri geri al" aria-label="Tüm silmeleri geri al"><i data-lucide="rotate-ccw"></i></button>
+          </div>
           <div id="pdfCanvasWrap" class="pdf-canvas-wrap">
             <canvas id="pdfCanvas"></canvas>
             <div id="pdfOverlayLayer" class="pdf-overlay-layer"></div>
             <div id="selectionBox" class="selection-box hidden">
+              <canvas id="eraserPreview" aria-hidden="true"></canvas>
               <span data-resize="nw"></span><span data-resize="n"></span><span data-resize="ne"></span>
               <span data-resize="e"></span><span data-resize="se"></span><span data-resize="s"></span>
               <span data-resize="sw"></span><span data-resize="w"></span>
@@ -557,7 +565,7 @@
     <script src="./vendor/lucide.min.js"></script>
     <script src="./vendor/html2canvas.min.js"></script>
     <script src="./vendor/jspdf.umd.min.js"></script>
-    <script src="./app.js?v=20260914"></script>
+    <script src="./app.js?v=20260923-1"></script>
     <script>
       if ("serviceWorker" in navigator && window.isSecureContext) {
         window.addEventListener("load", () => {

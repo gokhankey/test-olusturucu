@@ -1920,6 +1920,15 @@ textarea:focus,
   background: #e2eaf3;
 }
 
+#advancedToggleBtn.active,
+#advancedToggleBtn.active:hover,
+.mode-tab.active:hover {
+  color: #fff;
+  background: var(--nav-soft);
+  border-color: var(--nav-soft);
+  box-shadow: 0 8px 22px rgba(15, 47, 87, 0.2);
+}
+
 .settings-panel {
   gap: 12px;
 }
@@ -3197,13 +3206,14 @@ textarea:focus,
 /* Crop controls share the canvas coordinate system, including zoom and scrolling. */
 .pdf-canvas-wrap { touch-action: none; }
 .pdf-modal { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
-.pdf-topbar { grid-template-columns: 32px 70px minmax(0, 1fr) 36px 32px; height: auto; min-height: 54px; }
+.pdf-topbar { grid-template-columns: 32px 104px minmax(0, 1fr) 36px 32px; height: auto; min-height: 54px; }
 .pdf-topbar > *, .pdf-viewer { min-width: 0; min-height: 0; }
 .pdf-topbar .pdf-add { width: 36px; }
 .pdf-footer { height: auto; min-height: 58px; }
 .overlay > .dialog { width: min(476px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow: auto; }
 .pdf-canvas-wrap.pan-mode { cursor: grab; }
 .pdf-canvas-wrap.pan-mode:active { cursor: grabbing; }
+.pdf-viewer { position: relative; }
 .crop-modes { display: flex; flex-shrink: 0; gap: 2px; padding: 2px; border: 1px solid #cbd5e1; border-radius: 5px; }
 .crop-modes button { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 3px; color: #174a7c; background: white; }
 .crop-modes button.active { background: #174a7c; color: white; }
@@ -3217,6 +3227,10 @@ textarea:focus,
 .pdf-q-label { top: 2px; left: 2px; padding: 4px 7px; font-size: 12px; }
 .loaded-badge { bottom: 2px; right: 2px; padding: 3px 6px; font-size: 11px; }
 .selection-box { z-index: 3; pointer-events: auto; cursor: move; border: 2px solid #2563eb; touch-action: none; }
+.selection-box #eraserPreview { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
+.selection-box [data-resize] { z-index: 2; }
+.pdf-canvas-wrap.erase-mode .selection-box { cursor: crosshair; }
+.pdf-canvas-wrap.erase-mode .selection-box [data-resize] { display: none; }
 .selection-box [data-resize] { position: absolute; width: 12px; height: 12px; border: 2px solid #174a7c; background: white; border-radius: 2px; transform: translate(-50%, -50%); }
 [data-resize="nw"] { left: 0; top: 0; cursor: nwse-resize; }
 [data-resize="n"] { left: 50%; top: 0; cursor: ns-resize; }
@@ -3230,6 +3244,13 @@ textarea:focus,
 .selection-confirm .answer-picks { gap: 3px; }
 .selection-confirm .answer-picks button { width: 30px; height: 32px; min-width: 0; }
 #cancelCropBtn { display: grid; place-items: center; width: 30px; color: #174a7c; background: #edf3f9; border-radius: 4px; }
+.eraser-controls { position: sticky; top: 10px; z-index: 8; display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100% - 20px); margin: 10px 10px -54px auto; padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 7px; color: #0f2f57; background: rgba(255,255,255,.96); box-shadow: 0 10px 26px rgba(15,47,87,.18); }
+.eraser-controls > svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.eraser-controls label { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; }
+.eraser-controls input { width: 112px; accent-color: #174a7c; }
+.eraser-controls button { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 5px; color: #174a7c; background: #edf3f9; }
+.eraser-controls button:hover { color: #fff; background: #174a7c; }
+.eraser-controls button svg { width: 16px; height: 16px; }
 #cropSettingsModal { z-index: 300; }
 .crop-settings-body { display: grid; gap: 18px; }
 .crop-settings-body > label:first-child { display: grid; gap: 8px; }
@@ -3245,6 +3266,7 @@ textarea:focus,
 .final-question.expanded { font-size: 16px; }
 .printed-question-number { display: block; margin-bottom: 5px; }
 .final-question img { max-width: 100%; }
+.final-question > img { width: var(--question-print-width, 100%); max-width: var(--question-print-width, 100%); margin-inline: auto; }
 .final-question table { border-collapse: collapse; max-width: 100%; table-layout: fixed; }
 .final-question td, .final-question th { border: 1px solid #aaa; padding: 5px; }
 .final-title span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
@@ -3263,6 +3285,15 @@ textarea:focus,
 .doc-controls { flex-wrap: wrap; justify-content: center; max-width: 100%; gap: 10px; }
 .doc-controls button:disabled, .doc-side button:disabled { opacity: .5; cursor: wait; }
 .question-card:focus-within .card-tools, .question-card:focus-within .card-top-tools { opacity: 1; visibility: visible; pointer-events: auto; }
+.question-card { cursor: grab; transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease; }
+.question-card:active { cursor: grabbing; }
+.question-card button, .question-card input { cursor: pointer; }
+.question-card.is-dragging { opacity: .32; transform: scale(.97); }
+.question-card.drop-before { box-shadow: -6px 0 0 #2563eb, 0 16px 32px rgba(15,47,87,.12); }
+.question-card.drop-after { box-shadow: 6px 0 0 #2563eb, 0 16px 32px rgba(15,47,87,.12); }
+.card-top-tools { top: -38px; grid-template-columns: repeat(4, 34px); }
+.card-top-tools button:disabled { opacity: .32; cursor: default; }
+.card-top-tools button:disabled:hover { color: var(--ink); background: transparent; }
 @media (max-width: 560px) {
   .pdf-topbar { gap: 4px; padding: 6px; }
   .pdf-topbar select { min-width: 0; font-size: 13px; width: 100%; }
@@ -3270,8 +3301,11 @@ textarea:focus,
   .pdf-footer button { padding: 0 9px; min-height: 36px; }
   .pdf-footer label, #pdfQuestionTotal { font-size: 12px; }
   .pdf-modal { height: 96dvh; }
+  .eraser-controls { top: 6px; margin: 6px 6px -50px auto; gap: 5px; padding: 5px 6px; }
+  .eraser-controls input { width: 76px; }
+  .eraser-controls label { font-size: 11px; }
   .card-tools { display: grid; position: static; grid-template-columns: repeat(4, 34px); opacity: 1; visibility: visible; margin-bottom: 4px; }
-  .card-top-tools { top: 0; opacity: 1; visibility: visible; }
+  .card-top-tools { position: static; display: grid; width: max-content; margin: 0 0 4px auto; opacity: 1; visibility: visible; }
   .question-card:hover .card-tools { display: grid; }
   .doc-controls { font-size: 13px; padding: 8px; gap: 6px; }
   .doc-controls button { width: 28px; min-width: 28px; }

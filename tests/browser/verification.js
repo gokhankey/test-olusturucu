@@ -13,6 +13,24 @@ document.querySelector("#run").onclick = async () => {
   output.length = 0;
   try {
     check(typeof w.html2canvas === "function" && !!w.jspdf, "Local PDF dependencies");
+    const advancedButton=d.querySelector("#advancedToggleBtn");
+    advancedButton.click();
+    check(advancedButton.classList.contains("active") && advancedButton.getAttribute("aria-pressed")==="true" && !d.querySelector("#advancedPanel").classList.contains("hidden") && !d.querySelector(".mode-tab.active"),"Advanced settings has its own active state");
+    d.querySelector('[data-exam-kind="sheet"]').click();
+    check(s.examKind==="sheet" && d.querySelector('[data-exam-kind="sheet"]').classList.contains("active") && d.querySelector("#advancedPanel").classList.contains("hidden") && !d.querySelector("#basicPanel").classList.contains("hidden"),"Exam type exits advanced settings and restores its panel");
+    advancedButton.click();
+    d.querySelector('[data-exam-kind="trial"]').click();
+    check(s.examKind==="trial" && d.querySelector('[data-exam-kind="trial"]').classList.contains("active"),"Trial mode can be selected after advanced settings");
+    advancedButton.click();
+    d.querySelector('[data-exam-kind="written"]').click();
+    check(s.examKind==="written" && d.querySelector('[data-exam-kind="written"]').classList.contains("active"),"Written mode can be selected after advanced settings");
+    const eraseCanvas=d.createElement("canvas");
+    eraseCanvas.width=eraseCanvas.height=100;
+    eraseCanvas.getContext("2d").fillRect(0,0,100,100);
+    w.applyErasureStrokes(eraseCanvas,[{size:.2,points:[{x:.3,y:.5},{x:.7,y:.5}]}]);
+    const erasedPixel=eraseCanvas.getContext("2d").getImageData(50,50,1,1).data;
+    const keptPixel=eraseCanvas.getContext("2d").getImageData(5,5,1,1).data;
+    check(erasedPixel[0]===255 && keptPixel[0]===0,"Eraser removes only the painted part of a crop");
     const blob = await (await fetch("./crop-fixture.png")).blob();
     await w.handleCropSourceFiles([new w.File([blob], "fixture.png", {type:"image/png"})]);
     check(s.pdfs.length === 1 && s.questions.length === 0, "Image opens in crop tool, not as an entire question");
@@ -21,8 +39,9 @@ document.querySelector("#run").onclick = async () => {
     const point = w.clientToCanvasPoint({clientX:rect.left+rect.width*.25,clientY:rect.top+rect.height*.3});
     check(Math.abs(point.x/canvas.width-.25)<.001 && Math.abs(point.y/canvas.height-.3)<.001, "Crop coordinate mapping at fitted width");
     s.selection = {startX:canvas.width*.05,startY:canvas.height*.09,endX:canvas.width*.75,endY:canvas.height*.3};
+    s.eraseStrokes=[{size:.04,points:[{x:.1,y:.1},{x:.18,y:.1}]}];
     w.confirmPdfCrop();
-    check(s.questions.length===1 && !s.questions[0].loaded && d.querySelectorAll(".question-card").length===0, "Pending crop waits for Upload");
+    check(s.questions.length===1 && s.questions[0].erasureStrokes.length===1 && !s.questions[0].loaded && d.querySelectorAll(".question-card").length===0, "Pending crop keeps eraser edits and waits for Upload");
     const id = s.questions[0].id;
     w.editPdfCrop(id);
     s.selection.endX=canvas.width*.9;
@@ -49,6 +68,8 @@ document.querySelector("#run").onclick = async () => {
     check(!s.cropRendering,"Concurrent page renders finish cleanly");
     w.closePdfModal();
     const source=s.questions[0].src;
+    w.applyDraft({questions:["r1","r2","r3","r4"].map(id=>({id,kind:"image",src:source,loaded:true})),sections:[{id:"rs1",start:0,title:"Bir"},{id:"rs2",start:2,title:"Iki"}]});
+    check(w.reorderQuestion("r4","r1",false) && s.questions.map(q=>q.id).join(",")==="r4,r1,r2,r3" && s.sections[1].start===3,"Question reorder updates order and section boundary");
     const questions=Array.from({length:16},(_,i)=>({id:"check-"+i,kind:"image",src:source,loaded:true,answer:i%2?"B":"",expanded:i===2,asDescription:i===0,customGap:i===3,bottomGap:i===3?5:0}));
     questions[5]={...questions[5],kind:"manual",html:'<p><b>Tabloyu inceleyiniz:</b></p><table><tr><td>12</td><td>24</td></tr></table><p>Toplam nedir?</p>'};
     w.applyDraft({questions,sections:[{id:"s1",start:0,title:"Turkce"},{id:"s2",start:8,title:"Matematik",resetNumbering:true,newPage:true}],settings:{globalGap:35,watermark:{enabled:true,type:"text",text:"KEY TEST",opacity:20,size:80,angle:45,color:"#174a7c"}},fields:{testTitle:"Turkce denemesi",includeAnswerKey:true,includeOptic:true,groupName:"2"}});
@@ -63,6 +84,11 @@ document.querySelector("#run").onclick = async () => {
     check(Math.abs(customGap-5*96/25.4)<.1 && Math.abs(globalGap-35*96/25.4)<.1,"Printed spacing is exactly 5 mm and 35 mm");
     check(!d.querySelector('[data-question-id="check-0"] .printed-question-number'),"Description has no question number");
     check(d.querySelector('[data-question-id="check-2"]').offsetWidth>d.querySelector('[data-question-id="check-1"]').offsetWidth*1.8,"Expanded question spans both columns");
+    const normalQuestion=d.querySelector('[data-question-id="check-1"]');
+    const normalImage=normalQuestion.querySelector(":scope > img");
+    const expandedQuestion=d.querySelector('[data-question-id="check-2"]');
+    const expandedImage=expandedQuestion.querySelector(":scope > img");
+    check(Math.abs(normalImage.offsetWidth/normalQuestion.clientWidth-.82)<.03 && expandedImage.offsetWidth/expandedQuestion.clientWidth>.97,"Normal crops print compact while expanded crops stay full width");
     check(d.querySelectorAll(".paper-watermark").length===pages.length,"Watermark present on every page");
     check([...d.querySelectorAll(".paper-content")].every(content=>content.getBoundingClientRect().bottom<content.closest(".paper-page").querySelector("footer").getBoundingClientRect().top),"No content overlaps page footer");
     const before=[...d.querySelectorAll(".final-question")].map(q=>q.dataset.questionId).join();
