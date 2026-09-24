@@ -1,11 +1,15 @@
-const CACHE_NAME = "key-test-hazirlayici-20260923-1";
+const CACHE_NAME = "key-test-hazirlayici-20260924-1";
 const LOCAL_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
-  "./icon.svg",
+  "./aren-logo-navy.png",
+  "./aren-logo-white.png",
+  "./aren-icon-180.png",
+  "./aren-icon-192.png",
+  "./aren-icon-512.png",
   "./vendor/html2canvas.min.js",
   "./vendor/jspdf.umd.min.js",
   "./vendor/pdf.min.js",

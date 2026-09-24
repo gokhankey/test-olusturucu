@@ -1,4 +1,6 @@
-# Key Test Hazırlayıcı
+# Aren Academy TestMaker
+
+![Aren Academy](outputs/soru-sinav-atolyesi/aren-logo-navy.png)
 
 PDF ve fotoğraftan soru seçip test, yaprak test ve deneme sınavı hazırlamak için geliştirilmiş yerel web uygulaması.
 

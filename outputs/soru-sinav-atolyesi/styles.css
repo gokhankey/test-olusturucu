@@ -98,14 +98,13 @@ select:focus,
   min-width: 265px;
 }
 
-.brand-icon {
-  display: grid;
-  place-items: center;
-  width: 42px;
+.brand-logo {
+  display: block;
+  width: 104px;
   height: 42px;
-  border-radius: 50%;
-  color: var(--nav);
-  background: #d5e0e6;
+  flex: 0 0 auto;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .brand strong,
@@ -1686,7 +1685,7 @@ select:focus,
   }
 }
 
-/* Key Test Hazırlayıcı - professional white/navy interface */
+/* Aren Academy TestMaker - professional white/navy interface */
 :root {
   --nav: #0b1f3a;
   --nav-soft: #12355f;
@@ -1769,22 +1768,13 @@ textarea:focus,
 }
 
 .brand {
-  min-width: 330px;
+  min-width: 410px;
   gap: 14px;
 }
 
-.brand-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 8px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-.brand-icon svg {
-  width: 25px;
-  height: 25px;
+.brand-logo {
+  width: 112px;
+  height: 48px;
 }
 
 .brand strong {
@@ -2964,6 +2954,11 @@ textarea:focus,
     flex: 1 1 100%;
   }
 
+  .brand-logo {
+    width: 96px;
+    height: 42px;
+  }
+
   .brand strong {
     font-size: 21px;
   }
@@ -2980,21 +2975,7 @@ textarea:focus,
   }
 
   .account {
-    position: absolute;
-    right: 12px;
-    top: 16px;
-  }
-
-  .account-pill {
-    width: 38px;
-    padding: 0;
-    justify-content: center;
-    overflow: hidden;
-    color: transparent;
-  }
-
-  .account-pill svg {
-    color: #dbeafe;
+    display: none;
   }
 
   .workspace {
@@ -3110,6 +3091,19 @@ textarea:focus,
   .brand span,
   .panel-heading small {
     display: none;
+  }
+
+  .brand {
+    gap: 10px;
+  }
+
+  .brand-logo {
+    width: 82px;
+    height: 36px;
+  }
+
+  .brand strong {
+    font-size: 18px;
   }
 
   .mode-tabs {

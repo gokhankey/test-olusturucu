@@ -2258,7 +2258,7 @@ async function createDocumentPdfFile() {
     const targets = Array.from(els.finalPaper.querySelectorAll(".paper-page"));
     if (!targets.length) throw new Error("Önce kağıdı hazırlayın");
     const pdf = new window.jspdf.jsPDF({ orientation: els.orientation.value, unit: "mm", format: [layout.widthMm, layout.heightMm], compress: true });
-    pdf.setProperties({ title, creator: "Key Test Hazırlayıcı" });
+    pdf.setProperties({ title, creator: "Aren Academy TestMaker" });
     for (let i = 0; i < targets.length; i++) {
       const canvas = await renderPaperElementToCanvas(targets[i]);
       if (i) pdf.addPage([layout.widthMm, layout.heightMm], els.orientation.value);

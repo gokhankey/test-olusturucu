@@ -13,6 +13,7 @@ document.querySelector("#run").onclick = async () => {
   output.length = 0;
   try {
     check(typeof w.html2canvas === "function" && !!w.jspdf, "Local PDF dependencies");
+    check(d.title==="Aren Academy TestMaker" && d.querySelector(".brand strong")?.textContent.trim()==="Aren Academy TestMaker" && d.querySelector(".brand-logo")?.getAttribute("src")==="./aren-logo-white.png", "Aren Academy branding and logo");
     const advancedButton=d.querySelector("#advancedToggleBtn");
     advancedButton.click();
     check(advancedButton.classList.contains("active") && advancedButton.getAttribute("aria-pressed")==="true" && !d.querySelector("#advancedPanel").classList.contains("hidden") && !d.querySelector(".mode-tab.active"),"Advanced settings has its own active state");
